@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom"; // ✅ Mover aquí
 import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
 import "../css/login.css";
@@ -8,6 +9,8 @@ const Login = () => {
   const [pwd, setPwd] = useState("");
   const [alertMsg, setAlertMsg] = useState(null);
   const [showPwd, setShowPwd] = useState(false);
+
+  const navigate = useNavigate(); // ✅ Se declara aquí, no dentro del setTimeout
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -27,8 +30,9 @@ const Login = () => {
         type: "success",
         text: "Inicio de sesión exitoso. Redirigiendo...",
       });
+
       setTimeout(() => {
-        window.location.href = "/components/verificacion.jsx"; // puedes usar navigate() si usas react-router
+        navigate("/verificacion"); // ✅ Redirección correcta
       }, 1500);
     } else if (rfc !== "caast" && pwd !== "123") {
       setAlertMsg({
