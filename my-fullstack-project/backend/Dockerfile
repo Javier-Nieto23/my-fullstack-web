@@ -22,7 +22,7 @@ COPY backend/src ./src
 # Exponer puerto
 EXPOSE 3000
 
-# Iniciar servidor
-CMD ["node", "src/index.js"]
+# Ejecutar migraciones y luego iniciar servidor
+CMD ["sh", "-c", "npx prisma migrate deploy && node src/index.js"]
 
 

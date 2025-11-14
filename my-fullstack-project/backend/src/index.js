@@ -9,7 +9,17 @@ const app = express()
 const prisma = new PrismaClient()
 
 app.use(express.json())
-app.use(cors())
+
+// Configurar CORS para soportar Railway y desarrollo local
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'production'
+    ? [process.env.FRONTEND_URL || 'http://localhost:5173']
+    : ['http://localhost:5173', 'http://localhost:3000'],
+  credentials: true,
+  optionsSuccessStatus: 200
+}
+
+app.use(cors(corsOptions))
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
 const SALT_ROUNDS = 10
@@ -190,7 +200,9 @@ process.on('SIGINT', async () => {
   process.exit(0)
 })
 
-app.listen(PORT, () => {
+// Start server with 0.0.0.0 para que Railway pueda acceder
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor backend escuchando en puerto ${PORT}`)
   console.log(`Base de datos conectada`)
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`)
 })
