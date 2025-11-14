@@ -7,32 +7,7 @@ import jwt from 'jsonwebtoken'
 
 const app = express()
 
-// Log de variables de entorno para depuración
-console.log('🔍 Variables de entorno:')
-console.log('DATABASE_URL:', process.env.DATABASE_URL ? 'Configurada ✅' : 'No configurada ❌')
-console.log('DATABASE_PUBLIC_URL:', process.env.DATABASE_PUBLIC_URL ? 'Configurada ✅' : 'No configurada ❌')
-console.log('PORT:', process.env.PORT)
-console.log('NODE_ENV:', process.env.NODE_ENV)
-
-const prisma = new PrismaClient({
-  log: ['query', 'info', 'warn', 'error'],
-})
-
-// Probar conexión a la base de datos
-async function testDatabaseConnection() {
-  try {
-    await prisma.$connect()
-    console.log('✅ Conexión a la base de datos exitosa')
-    
-    // Verificar si existe la tabla User
-    const userCount = await prisma.user.count()
-    console.log(`📊 Tabla User existe, registros: ${userCount}`)
-  } catch (error) {
-    console.error('❌ Error de conexión a la base de datos:', error.message)
-  }
-}
-
-testDatabaseConnection()
+const prisma = new PrismaClient()
 
 app.use(express.json())
 

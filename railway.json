@@ -7,7 +7,7 @@
   "deploy": {
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 5,
-    "startCommand": "sh -c 'echo \"Variables disponibles:\" && env | grep -i database && npx prisma db push --force-reset && node src/index.js'",
+    "startCommand": "sh -c 'npx prisma db push && node src/index.js'",
     "numReplicas": 1
   }
 }
