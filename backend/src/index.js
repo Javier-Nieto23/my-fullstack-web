@@ -193,6 +193,42 @@ app.get('/items', (req, res) => {
   ])
 })
 
+// GET /debug/database - Endpoint temporal para verificar la base de datos
+app.get('/debug/database', async (req, res) => {
+  try {
+    // Verificar conexión
+    await prisma.$connect()
+    
+    // Contar usuarios
+    const userCount = await prisma.user.count()
+    
+    // Obtener algunos usuarios de ejemplo
+    const users = await prisma.user.findMany({
+      take: 5,
+      select: {
+        id: true,
+        email: true,
+        nombre: true,
+        createdAt: true
+      }
+    })
+
+    res.json({
+      status: 'success',
+      database: 'connected',
+      userCount,
+      users,
+      databaseUrl: process.env.DATABASE_URL ? 'configured' : 'missing'
+    })
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: error.message,
+      databaseUrl: process.env.DATABASE_URL ? 'configured' : 'missing'
+    })
+  }
+})
+
 const PORT = process.env.PORT || 3000
 
 // Graceful shutdown
