@@ -89,7 +89,7 @@ const Login = () => {
   return (
     <div className="login-page">
       <div className="login-header" style={{ textAlign: "center", marginBottom: 14 }}>
-        <img src="img/LOGONegro.png" alt="CAAST" className="logo" />
+        <img src="/LOGONegro.png" alt="CAAST" className="logo" />
         <h1 className="welcome-title">Bienvenido de vuelta</h1>
         <p className="welcome-subtitle">Accede a tu centro de cumplimiento fiscal</p>
       </div>

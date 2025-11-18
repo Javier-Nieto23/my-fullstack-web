@@ -171,7 +171,7 @@ const Registro = () => {
   return (
     <div className="login-page">
       <div className="login-header" style={{ textAlign: "center", marginBottom: 14 }}>
-        <img src="img/LOGONegro.png" alt="Logo" className="logo" />
+        <img src="/LOGONegro.png" alt="Logo" className="logo" />
         <h2 className="welcome-title">Únete a nosotros</h2>
         <p className="welcome-subtitle">Crea tu cuenta y comienza a procesar documentos</p>
       </div>

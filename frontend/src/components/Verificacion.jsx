@@ -63,7 +63,7 @@ const Verificacion = () => {
             >
               <img
                 className="navbar-brand"
-                src="/img/LOGONegro.png"
+                src="/LOGONegro.png"
                 alt="SEER Tráfico S.C."
                 style={{ height: "46px" }}
               />
