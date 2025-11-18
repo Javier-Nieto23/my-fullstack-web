@@ -16,46 +16,11 @@ console.log('🔧 Configurando CORS...')
 console.log('NODE_ENV:', process.env.NODE_ENV)
 console.log('FRONTEND_URL:', process.env.FRONTEND_URL)
 
-// Configurar CORS para soportar Railway y desarrollo local
-const corsOptions = {
-  origin: function (origin, callback) {
-    console.log('🌐 Request from origin:', origin)
-    
-    // En producción, ser más permisivo temporalmente para debug
-    if (process.env.NODE_ENV === 'production') {
-      // Permitir cualquier dominio de Vercel
-      if (!origin || origin.includes('.vercel.app')) {
-        console.log('✅ Allowing Vercel domain or no origin:', origin)
-        return callback(null, true)
-      }
-      
-      // También permitir dominios específicos
-      const allowedOrigins = [
-        process.env.FRONTEND_URL,
-        'https://my-fullstack-web-git-main-javier-nietos-projects.vercel.app',
-        'https://my-fullstack-web-git-main-javier-nieto23-projects.vercel.app'
-      ].filter(Boolean)
-      
-      if (allowedOrigins.includes(origin)) {
-        console.log('✅ Allowing specific origin:', origin)
-        return callback(null, true)
-      }
-      
-      console.log('❌ Origin not allowed:', origin)
-      console.log('❌ Allowed origins:', allowedOrigins)
-      return callback(new Error('Not allowed by CORS'))
-    } else {
-      // Desarrollo - permitir todo
-      return callback(null, true)
-    }
-  },
-  credentials: true,
-  optionsSuccessStatus: 200,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept']
-}
-
-app.use(cors(corsOptions))
+// Configurar CORS simple para debug
+app.use(cors({
+  origin: true, // Permitir todos los orígenes temporalmente
+  credentials: true
+}))
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
 const SALT_ROUNDS = 10
@@ -295,4 +260,12 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor backend escuchando en puerto ${PORT}`)
   console.log(`Base de datos conectada`)
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`)
+  
+  // Listar rutas registradas
+  console.log('📋 Rutas registradas:')
+  app._router.stack.forEach((r) => {
+    if (r.route) {
+      console.log(`  ${Object.keys(r.route.methods)[0].toUpperCase()} ${r.route.path}`)
+    }
+  })
 })
