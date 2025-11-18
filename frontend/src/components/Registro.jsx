@@ -211,9 +211,7 @@ const Registro = () => {
                 disabled={loading}
                 maxLength="12"
               />
-              <small className="form-text text-muted">
-                4 letras seguidas de 8 números (ej: ABCD12345678)
-              </small>
+           
             </div>
           </div>
 
