@@ -21,38 +21,38 @@ const corsOptions = {
   origin: function (origin, callback) {
     console.log('🌐 Request from origin:', origin)
     
-    const allowedOrigins = process.env.NODE_ENV === 'production'
-      ? [
-          process.env.FRONTEND_URL,
-          'https://my-fullstack-web-git-main-javier-nietos-projects.vercel.app',
-          'https://my-fullstack-web-git-main-javier-nieto23-projects.vercel.app',
-          // Permitir cualquier dominio de Vercel temporalmente
-          ...(origin && origin.includes('.vercel.app') ? [origin] : [])
-        ].filter(Boolean)
-      : ['http://localhost:5173', 'http://localhost:3000']
-    
-    console.log('✅ Allowed origins:', allowedOrigins)
-    
-    // Permitir requests sin origin (como Postman) en desarrollo
-    if (!origin && process.env.NODE_ENV !== 'production') {
-      return callback(null, true)
-    }
-    
-    // Permitir cualquier dominio de Vercel temporalmente
-    if (origin && origin.includes('.vercel.app')) {
-      console.log('✅ Allowing Vercel domain:', origin)
-      return callback(null, true)
-    }
-    
-    if (allowedOrigins.includes(origin)) {
-      callback(null, true)
-    } else {
+    // En producción, ser más permisivo temporalmente para debug
+    if (process.env.NODE_ENV === 'production') {
+      // Permitir cualquier dominio de Vercel
+      if (!origin || origin.includes('.vercel.app')) {
+        console.log('✅ Allowing Vercel domain or no origin:', origin)
+        return callback(null, true)
+      }
+      
+      // También permitir dominios específicos
+      const allowedOrigins = [
+        process.env.FRONTEND_URL,
+        'https://my-fullstack-web-git-main-javier-nietos-projects.vercel.app',
+        'https://my-fullstack-web-git-main-javier-nieto23-projects.vercel.app'
+      ].filter(Boolean)
+      
+      if (allowedOrigins.includes(origin)) {
+        console.log('✅ Allowing specific origin:', origin)
+        return callback(null, true)
+      }
+      
       console.log('❌ Origin not allowed:', origin)
-      callback(new Error('Not allowed by CORS'))
+      console.log('❌ Allowed origins:', allowedOrigins)
+      return callback(new Error('Not allowed by CORS'))
+    } else {
+      // Desarrollo - permitir todo
+      return callback(null, true)
     }
   },
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Origin', 'X-Requested-With', 'Accept']
 }
 
 app.use(cors(corsOptions))

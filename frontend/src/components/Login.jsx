@@ -13,6 +13,11 @@ const Login = () => {
 
   const navigate = useNavigate();
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+  
+  console.log('🔧 Environment variables:');
+  console.log('VITE_API_URL from env:', import.meta.env.VITE_API_URL);
+  console.log('Final API_URL:', API_URL);
+  console.log('Current origin:', window.location.origin);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
