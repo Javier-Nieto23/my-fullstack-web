@@ -11,11 +11,38 @@ const prisma = new PrismaClient()
 
 app.use(express.json())
 
+// Logging para debug
+console.log('🔧 Configurando CORS...')
+console.log('NODE_ENV:', process.env.NODE_ENV)
+console.log('FRONTEND_URL:', process.env.FRONTEND_URL)
+
 // Configurar CORS para soportar Railway y desarrollo local
 const corsOptions = {
-  origin: process.env.NODE_ENV === 'production'
-    ? [process.env.FRONTEND_URL || 'http://localhost:5173']
-    : ['http://localhost:5173', 'http://localhost:3000'],
+  origin: function (origin, callback) {
+    console.log('🌐 Request from origin:', origin)
+    
+    const allowedOrigins = process.env.NODE_ENV === 'production'
+      ? [
+          process.env.FRONTEND_URL,
+          'https://my-fullstack-web-git-main-javier-nietos-projects.vercel.app',
+          'https://my-fullstack-web-git-main-javier-nieto23-projects.vercel.app'
+        ].filter(Boolean)
+      : ['http://localhost:5173', 'http://localhost:3000']
+    
+    console.log('✅ Allowed origins:', allowedOrigins)
+    
+    // Permitir requests sin origin (como Postman) en desarrollo
+    if (!origin && process.env.NODE_ENV !== 'production') {
+      return callback(null, true)
+    }
+    
+    if (allowedOrigins.includes(origin)) {
+      callback(null, true)
+    } else {
+      console.log('❌ Origin not allowed:', origin)
+      callback(new Error('Not allowed by CORS'))
+    }
+  },
   credentials: true,
   optionsSuccessStatus: 200
 }
@@ -185,8 +212,26 @@ app.get('/auth/me', verifyToken, async (req, res) => {
   }
 })
 
+// GET /health - Health check
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  })
+})
+
+// GET / - Root endpoint
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'Backend API funcionando correctamente',
+    endpoints: ['/health', '/items', '/auth/register', '/auth/login']
+  })
+})
+
 // GET /items (endpoint existente para pruebas)
 app.get('/items', (req, res) => {
+  console.log('📦 Request to /items endpoint')
   res.json([
     { id: 1, name: 'Juego Zelda' },
     { id: 2, name: 'Consola Switch' },

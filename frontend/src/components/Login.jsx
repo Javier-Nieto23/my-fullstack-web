@@ -30,6 +30,9 @@ const Login = () => {
     setLoading(true);
 
     try {
+      console.log('🔗 Intentando conectar a:', API_URL);
+      console.log('📧 Email:', email);
+      
       const response = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: {
@@ -41,7 +44,11 @@ const Login = () => {
         }),
       });
 
+      console.log('📡 Response status:', response.status);
+      console.log('📡 Response ok:', response.ok);
+
       const data = await response.json();
+      console.log('📦 Response data:', data);
 
       if (!response.ok) {
         setAlertMsg({
@@ -65,10 +72,10 @@ const Login = () => {
         navigate("/verificacion");
       }, 1500);
     } catch (error) {
-      console.error("Error:", error);
+      console.error("❌ Error completo:", error);
       setAlertMsg({
         type: "danger",
-        text: "Error de conexión. Intenta nuevamente.",
+        text: `Error de conexión: ${error.message}. API URL: ${API_URL}`,
       });
       setLoading(false);
     }
