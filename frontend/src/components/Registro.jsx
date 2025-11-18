@@ -28,6 +28,52 @@ const Registro = () => {
     });
   };
 
+  const handleRfcChange = (e) => {
+    let value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); // Solo letras y números, convertir a mayúsculas
+    
+    // Aplicar formato RFC: 4 letras + 8 números
+    let formattedValue = '';
+    
+    // Primeros 4 caracteres: solo letras
+    for (let i = 0; i < Math.min(4, value.length); i++) {
+      if (/[A-Z]/.test(value[i])) {
+        formattedValue += value[i];
+      }
+    }
+    
+    // Siguientes 8 caracteres: solo números
+    let numberPart = value.slice(4).replace(/[^0-9]/g, '');
+    if (numberPart.length > 8) {
+      numberPart = numberPart.slice(0, 8);
+    }
+    formattedValue += numberPart;
+    
+    // Limitar a 12 caracteres total
+    if (formattedValue.length > 12) {
+      formattedValue = formattedValue.slice(0, 12);
+    }
+    
+    setFormData({
+      ...formData,
+      rfc: formattedValue,
+    });
+  };
+
+  const validateRfc = (rfc) => {
+    // Debe tener exactamente 12 caracteres
+    if (rfc.length !== 12) return false;
+    
+    // Primeros 4 caracteres deben ser letras
+    const letterPart = rfc.slice(0, 4);
+    if (!/^[A-Z]{4}$/.test(letterPart)) return false;
+    
+    // Últimos 8 caracteres deben ser números
+    const numberPart = rfc.slice(4);
+    if (!/^[0-9]{8}$/.test(numberPart)) return false;
+    
+    return true;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setAlertMsg(null);
@@ -40,10 +86,10 @@ const Registro = () => {
       return;
     }
 
-    if (formData.rfc.length < 12) {
+    if (!validateRfc(formData.rfc)) {
       setAlertMsg({
         type: "danger",
-        text: "El RFC debe tener al menos 12 caracteres.",
+        text: "El RFC debe tener exactamente 4 letras seguidas de 8 números (ej: ABCD12345678).",
       });
       return;
     }
@@ -158,12 +204,16 @@ const Registro = () => {
                 type="text"
                 name="rfc"
                 className="form-control"
-                placeholder="AAAA123456ABC"
+                placeholder="ABCD12345678"
                 value={formData.rfc}
-                onChange={handleChange}
+                onChange={handleRfcChange}
                 autoComplete="off"
                 disabled={loading}
+                maxLength="12"
               />
+              <small className="form-text text-muted">
+                4 letras seguidas de 8 números (ej: ABCD12345678)
+              </small>
             </div>
           </div>
 
