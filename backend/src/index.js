@@ -25,7 +25,9 @@ const corsOptions = {
       ? [
           process.env.FRONTEND_URL,
           'https://my-fullstack-web-git-main-javier-nietos-projects.vercel.app',
-          'https://my-fullstack-web-git-main-javier-nieto23-projects.vercel.app'
+          'https://my-fullstack-web-git-main-javier-nieto23-projects.vercel.app',
+          // Permitir cualquier dominio de Vercel temporalmente
+          ...(origin && origin.includes('.vercel.app') ? [origin] : [])
         ].filter(Boolean)
       : ['http://localhost:5173', 'http://localhost:3000']
     
@@ -33,6 +35,12 @@ const corsOptions = {
     
     // Permitir requests sin origin (como Postman) en desarrollo
     if (!origin && process.env.NODE_ENV !== 'production') {
+      return callback(null, true)
+    }
+    
+    // Permitir cualquier dominio de Vercel temporalmente
+    if (origin && origin.includes('.vercel.app')) {
+      console.log('✅ Allowing Vercel domain:', origin)
       return callback(null, true)
     }
     
