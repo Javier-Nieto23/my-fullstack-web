@@ -155,22 +155,38 @@ export class PDFProcessor {
         
         // � ESTRATEGIA LOCAL: Métodos ordenados por efectividad
         const localMethods = [
-          // Métodos más efectivos primero
-          { name: 'Ghostscript Solo', fn: () => this.ghostscriptOnlyConversion(outputPath) },
-          { name: 'ImageMagick Potente', fn: () => this.powerImageMagickConversion(outputPath) },
-          { name: 'Ghostscript + ImageMagick', fn: () => this.ghostscriptImageMagickConversion(outputPath) },
-          { name: 'Página por Página', fn: () => this.pageByPageConversion(outputPath) },
-          { name: 'ImageMagick Directo', fn: () => this.imageMagickConversion(outputPath) },
-          { name: 'Conversión de Emergencia', fn: () => this.emergencyConversion(outputPath) },
-          { name: 'Extracción de Imágenes', fn: () => this.imageExtractionConversion(outputPath) }
+          // Métodos más conservadores primero para preservar estructura
+          { name: 'Ghostscript Conservador', fn: () => this.conservativeGhostscriptConversion(outputPath) },
+          { name: 'Ghostscript Moderado', fn: () => this.moderateGhostscriptConversion(outputPath) },
+          { name: 'ImageMagick Suave', fn: () => this.gentleImageMagickConversion(outputPath) }
         ];
         
         let conversionSuccess = false;
         for (let i = 0; i < localMethods.length; i++) {
           const method = localMethods[i];
+          
+          // Crear backup antes de cada método
+          const backupPath = outputPath + '.backup';
+          try {
+            await fs.copyFile(outputPath, backupPath);
+          } catch (backupError) {
+            console.warn('⚠️ No se pudo crear backup, continuando...');
+          }
+          
           try {
             console.log(`🔧 Aplicando método ${i + 1}/${localMethods.length}: ${method.name}...`);
             await method.fn();
+            
+            // 🔍 VALIDACIÓN INTERMEDIA: Verificar que sigue siendo un PDF válido
+            const isStillPDF = await this.validatePDFStructure(outputPath);
+            if (!isStillPDF) {
+              console.warn(`⚠️ ${method.name} corrompió el PDF, restaurando backup...`);
+              if (await fs.access(backupPath).then(() => true).catch(() => false)) {
+                await fs.copyFile(backupPath, outputPath);
+              }
+              throw new Error('PDF structure corrupted');
+            }
+            
             optimizations.push(`${method.name} aplicado exitosamente`);
             
             // Verificar si ahora cumple especificaciones
@@ -178,13 +194,27 @@ export class PDFProcessor {
             if (verifyResult.success) {
               console.log(`✅ Conversión exitosa con método: ${method.name}`);
               conversionSuccess = true;
+              // Limpiar backup
+              try { await fs.unlink(backupPath); } catch {}
               break;
             } else {
               console.log(`⚠️ ${method.name} completado pero aún no cumple especificaciones`);
             }
           } catch (methodError) {
             console.warn(`⚠️ ${method.name} falló: ${methodError.message}`);
+            // Restaurar backup si existe
+            if (await fs.access(backupPath).then(() => true).catch(() => false)) {
+              try {
+                await fs.copyFile(backupPath, outputPath);
+                console.log('📄 Backup restaurado exitosamente');
+              } catch (restoreError) {
+                console.warn('⚠️ Error restaurando backup:', restoreError.message);
+              }
+            }
           }
+          
+          // Limpiar backup
+          try { await fs.unlink(backupPath); } catch {}
         }
         
         if (!conversionSuccess) {
@@ -1702,7 +1732,189 @@ export class PDFProcessor {
   }
 
   /**
-   * 📋 REPORTE DE PROCESAMIENTO
+   * � VALIDACIÓN DE ESTRUCTURA PDF
+   * Verifica que el archivo sigue siendo un PDF válido
+   */
+  async validatePDFStructure(filePath) {
+    try {
+      // Verificar que es un PDF con pdfinfo
+      await execAsync(`pdfinfo "${filePath}"`);
+      
+      // Verificar el header del archivo
+      const fileBuffer = await fs.readFile(filePath, { start: 0, end: 10 });
+      const fileContent = fileBuffer.toString('ascii');
+      
+      if (!fileContent.startsWith('%PDF-')) {
+        return false;
+      }
+      
+      // Verificar que el archivo no está vacío y tiene un tamaño razonable
+      const stats = await fs.stat(filePath);
+      if (stats.size < 100) { // PDF mínimo debe tener al menos 100 bytes
+        return false;
+      }
+      
+      console.log('✅ PDF structure validation passed');
+      return true;
+    } catch (error) {
+      console.warn('⚠️ PDF structure validation failed:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * 🕊️ CONVERSIÓN GHOSTSCRIPT CONSERVADORA
+   * Método suave que preserva la estructura
+   */
+  async conservativeGhostscriptConversion(filePath) {
+    const tempFile = filePath + '.conservative';
+    
+    try {
+      console.log('🕊️ Aplicando conversión Ghostscript conservadora...');
+      
+      // Comando Ghostscript conservador - solo cambios esenciales
+      const gsCommand = [
+        'gs',
+        '-sDEVICE=pdfwrite',
+        '-dNOPAUSE',
+        '-dQUIET',
+        '-dBATCH',
+        '-dPreserveAnnots=true',              // Preservar anotaciones
+        '-dPreserveMarkedContent=true',       // Preservar contenido marcado
+        '-dPreserveOPI=false',                // OPI no necesario
+        '-dPreserveHalftoneInfo=false',       // Halftone no necesario
+        '-dPreserveCopyPage=true',            // Preservar páginas
+        '-dPreserveDeviceN=true',             // Preservar DeviceN
+        '-dMaxBitmap=2147483647',             // Bitmap máximo
+        '-r300',                              // 300 DPI
+        '-sColorConversionStrategy=Gray',     // Solo conversión de color
+        '-dProcessColorModel=/DeviceGray',    // Modelo gris
+        '-dCompatibilityLevel=1.4',           // PDF 1.4
+        `-sOutputFile=${tempFile}`,
+        `"${filePath}"`
+      ].join(' ');
+
+      await execAsync(gsCommand);
+      
+      // Verificar resultado
+      const stats = await fs.stat(tempFile);
+      if (stats.size === 0) {
+        throw new Error('Conversión conservadora generó archivo vacío');
+      }
+      
+      // Reemplazar archivo original
+      await fs.rename(tempFile, filePath);
+      console.log('✅ Conversión Ghostscript conservadora completada');
+      
+    } catch (error) {
+      console.warn('⚠️ Conversión Ghostscript conservadora falló:', error.message);
+      try {
+        await fs.unlink(tempFile);
+      } catch {}
+      throw error;
+    }
+  }
+
+  /**
+   * ⚖️ CONVERSIÓN GHOSTSCRIPT MODERADA
+   * Método intermedio con más agresividad
+   */
+  async moderateGhostscriptConversion(filePath) {
+    const tempFile = filePath + '.moderate';
+    
+    try {
+      console.log('⚖️ Aplicando conversión Ghostscript moderada...');
+      
+      // Comando Ghostscript moderado
+      const gsCommand = [
+        'gs',
+        '-sDEVICE=pdfwrite',
+        '-dNOPAUSE',
+        '-dQUIET',
+        '-dBATCH',
+        '-r300',
+        '-sColorConversionStrategy=Gray',
+        '-dProcessColorModel=/DeviceGray',
+        '-dOverrideICC=false',                // Menos agresivo con ICC
+        '-dDownsampleColorImages=true',
+        '-dColorImageResolution=300',
+        '-dDownsampleGrayImages=true',
+        '-dGrayImageResolution=300',
+        '-dEmbedAllFonts=true',
+        '-dSubsetFonts=true',
+        '-dOptimize=true',
+        '-dCompatibilityLevel=1.4',
+        `-sOutputFile=${tempFile}`,
+        `"${filePath}"`
+      ].join(' ');
+
+      await execAsync(gsCommand);
+      
+      // Verificar resultado
+      const stats = await fs.stat(tempFile);
+      if (stats.size === 0) {
+        throw new Error('Conversión moderada generó archivo vacío');
+      }
+      
+      // Reemplazar archivo original
+      await fs.rename(tempFile, filePath);
+      console.log('✅ Conversión Ghostscript moderada completada');
+      
+    } catch (error) {
+      console.warn('⚠️ Conversión Ghostscript moderada falló:', error.message);
+      try {
+        await fs.unlink(tempFile);
+      } catch {}
+      throw error;
+    }
+  }
+
+  /**
+   * 🌸 CONVERSIÓN IMAGEMAGICK SUAVE
+   * Método ImageMagick conservador
+   */
+  async gentleImageMagickConversion(filePath) {
+    const tempFile = filePath + '.gentle';
+    
+    try {
+      console.log('🌸 Aplicando conversión ImageMagick suave...');
+      
+      // Comando ImageMagick suave y conservador
+      const convertCommand = [
+        'convert',
+        '-density', '300',
+        `"${filePath}"`,
+        '-colorspace', 'Gray',
+        '-depth', '8',
+        '-compress', 'LZW',          // Compresión sin pérdida
+        '-quality', '95',            // Calidad alta
+        '-density', '300',
+        `"${tempFile}"`
+      ].join(' ');
+
+      await execAsync(convertCommand);
+      
+      // Verificar resultado
+      const stats = await fs.stat(tempFile);
+      if (stats.size === 0) {
+        throw new Error('ImageMagick suave generó archivo vacío');
+      }
+      
+      // Reemplazar archivo original
+      await fs.rename(tempFile, filePath);
+      console.log('✅ Conversión ImageMagick suave completada');
+      
+    } catch (error) {
+      console.warn('⚠️ Conversión ImageMagick suave falló:', error.message);
+      try {
+        await fs.unlink(tempFile);
+      } catch {}
+      throw error;
+    }
+  }
+
+  /**
+   * �📋 REPORTE DE PROCESAMIENTO
    */
   generateProcessingReport(result) {
     const { originalSize, processedSize, compressionRatio, optimizations, verification } = result;
