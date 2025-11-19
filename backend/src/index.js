@@ -15,7 +15,7 @@ import { exec } from 'child_process'
 import { promisify } from 'util'
 import r2Service from './services/cloudflareR2.js'
 import { pdfValidator } from './services/pdfValidator.js'
-import { pdfProcessor } from './services/pdfProcessor.js'
+import PDFProcessor from './services/pdfProcessor.js'
 
 const execAsync = promisify(exec)
 
@@ -216,6 +216,9 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
     const { originalname, buffer, size, mimetype } = req.file
     const userId = req.user.id
 
+    // Instanciar procesador de PDF
+    const pdfProcessor = new PDFProcessor();
+
     console.log('🔍 Iniciando validación y procesamiento PDF:', originalname)
 
     // 1️⃣ VALIDACIÓN CON DETECCIÓN DE OCR
@@ -251,9 +254,9 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
       
       try {
         const processingResult = await pdfProcessor.processPDF(buffer, originalname);
-        finalBuffer = processingResult.buffer;
+        finalBuffer = processingResult.processedBuffer;
         wasProcessed = true;
-        processingReport = pdfProcessor.generateProcessingReport(processingResult);
+        processingReport = processingResult.optimizations.join(', ');
         console.log('✅ PDF procesado exitosamente');
       } catch (error) {
         console.error('❌ Error procesando PDF:', error);
