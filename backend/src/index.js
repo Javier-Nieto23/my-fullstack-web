@@ -447,11 +447,30 @@ app.get('/api/documents/:id/view', verifyToken, async (req, res) => {
       // Generar URL firmada para visualización (válida por 1 hora)
       const signedUrl = await r2Service.getSignedViewUrl(document.filePath, 3600)
       
-      // Redirigir a la URL firmada de Cloudflare R2
-      res.redirect(signedUrl)
+      console.log('🔗 URL firmada generada:', signedUrl)
+      
+      // En lugar de redireccionar, obtener el archivo y enviarlo directamente
+      const response = await fetch(signedUrl)
+      
+      if (!response.ok) {
+        throw new Error(`Error obteniendo archivo: ${response.status} ${response.statusText}`)
+      }
+      
+      // Configurar headers para visualización PDF
+      res.set({
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="${document.originalName}"`,
+        'Cache-Control': 'public, max-age=3600',
+        'Accept-Ranges': 'bytes'
+      })
+      
+      // Enviar el archivo PDF directamente
+      const pdfBuffer = await response.buffer()
+      res.send(pdfBuffer)
+      
     } catch (r2Error) {
-      console.error('Error obteniendo URL de R2:', r2Error)
-      res.status(500).json({ error: 'Error al acceder al archivo en Cloudflare R2' })
+      console.error('Error obteniendo archivo de R2:', r2Error)
+      res.status(500).json({ error: 'Error al acceder al archivo: ' + r2Error.message })
     }
 
   } catch (error) {

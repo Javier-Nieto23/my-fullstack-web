@@ -440,14 +440,66 @@ const Verificacion = () => {
     }
   }
 
-  const viewPdf = (doc) => {
-    if (doc.fileUrl) {
-      // Crear URL completa para la visualización
+  const viewPdf = async (doc) => {
+    try {
+      if (!doc.fileUrl) {
+        Swal.fire('Error', 'No se puede mostrar el documento. Archivo no disponible.', 'error')
+        return
+      }
+
+      // Mostrar loading
+      Swal.fire({
+        title: 'Cargando PDF...',
+        html: 'Obteniendo documento desde el servidor',
+        allowOutsideClick: false,
+        didOpen: () => {
+          Swal.showLoading()
+        }
+      })
+
+      // Obtener el PDF desde el backend
+      const token = localStorage.getItem('token')
       const fullUrl = `${API_URL}${doc.fileUrl}`
-      setViewingPdf({ ...doc, fullUrl })
-    } else {
-      Swal.fire('Error', 'No se puede mostrar el documento. Archivo no disponible.', 'error')
+      
+      const response = await axios.get(fullUrl, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        responseType: 'blob' // Importante: obtener como blob
+      })
+
+      // Crear URL temporal para el blob
+      const pdfBlob = new Blob([response.data], { type: 'application/pdf' })
+      const pdfUrl = URL.createObjectURL(pdfBlob)
+
+      // Cerrar loading y mostrar el PDF
+      Swal.close()
+      setViewingPdf({ 
+        ...doc, 
+        fullUrl: pdfUrl,
+        isBlob: true // Marcamos que es un blob para limpieza posterior
+      })
+
+    } catch (error) {
+      console.error('Error obteniendo PDF:', error)
+      Swal.close()
+      
+      if (error.response?.status === 404) {
+        Swal.fire('Error', 'Documento no encontrado en el servidor.', 'error')
+      } else if (error.response?.status === 403) {
+        Swal.fire('Error', 'No tienes permisos para ver este documento.', 'error')
+      } else {
+        Swal.fire('Error', 'Error al cargar el documento. Intenta nuevamente.', 'error')
+      }
     }
+  }
+
+  const closePdfViewer = () => {
+    // Limpiar URL del blob si existe para evitar memory leaks
+    if (viewingPdf?.isBlob && viewingPdf?.fullUrl) {
+      URL.revokeObjectURL(viewingPdf.fullUrl)
+    }
+    setViewingPdf(null)
   }
 
   const viewConvertedPdf = (doc) => {
@@ -841,7 +893,7 @@ const Verificacion = () => {
 
       {/* Modal PDF Viewer - Backend Documents */}
       {viewingPdf && (
-        <div className="modal fade show" style={{display: 'block', backgroundColor: 'rgba(0,0,0,0.5)'}} onClick={() => setViewingPdf(null)}>
+        <div className="modal fade show" style={{display: 'block', backgroundColor: 'rgba(0,0,0,0.5)'}} onClick={() => closePdfViewer()}>
           <div className="modal-dialog modal-xl" onClick={e => e.stopPropagation()}>
             <div className="modal-content">
               <div className="modal-header">
@@ -849,7 +901,7 @@ const Verificacion = () => {
                   <i className="bi bi-file-pdf text-danger me-2"></i>
                   {viewingPdf.name}
                 </h5>
-                <button type="button" className="btn-close" onClick={() => setViewingPdf(null)}></button>
+                <button type="button" className="btn-close" onClick={() => closePdfViewer()}></button>
               </div>
               <div className="modal-body p-0">
                 <iframe
@@ -859,7 +911,7 @@ const Verificacion = () => {
                 />
               </div>
               <div className="modal-footer">
-                <button className="btn btn-secondary" onClick={() => setViewingPdf(null)}>
+                <button className="btn btn-secondary" onClick={() => closePdfViewer()}>
                   Cerrar
                 </button>
                 {viewingPdf.downloadUrl && (
