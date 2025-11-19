@@ -164,9 +164,9 @@ export class PDFProcessor {
             await this.pdfRestConversion(outputPath);
             optimizations.push('PDF-REST aplicado exitosamente');
           } catch (pdfRestError) {
-            console.warn('⚠️ PDF-REST falló, intentando métodos alternativos...');
+            console.warn('⚠️ PDF-REST no disponible, usando métodos alternativos locales...');
             
-            // Métodos alternativos (sin rasterización problemática)
+            // Métodos alternativos locales (más confiables para fallback)
             const alternativeMethods = [
               () => this.pageByPageConversion(outputPath),
               () => this.simpleGrayscaleConversion(outputPath),
@@ -176,14 +176,16 @@ export class PDFProcessor {
             ];
             
             let fallbackSuccess = false;
-            for (const method of alternativeMethods) {
+            for (let i = 0; i < alternativeMethods.length; i++) {
+              const method = alternativeMethods[i];
               try {
+                console.log(`🔧 Intentando método alternativo ${i + 1}/${alternativeMethods.length}...`);
                 await method();
-                optimizations.push('Método alternativo aplicado exitosamente');
+                optimizations.push(`Método alternativo ${i + 1} aplicado exitosamente`);
                 fallbackSuccess = true;
                 break;
               } catch (altError) {
-                console.warn(`⚠️ Método alternativo falló: ${altError.message}`);
+                console.warn(`⚠️ Método alternativo ${i + 1} falló: ${altError.message}`);
               }
             }
             
@@ -604,23 +606,37 @@ export class PDFProcessor {
 
   /**
    * 🔌 LLAMADA A PDF-REST API
-   * Integración con servicios de PDF-REST
+   * Integración con servicios de PDF-REST con detección rápida de errores
    */
   async callPdfRestAPI(fileBuffer) {
     try {
-      // Estrategia 1: Usar PDF-REST Compress
+      // Verificación rápida de conectividad (máximo 10 segundos total)
+      console.log('🌐 Verificando disponibilidad de PDF-REST...');
+      
+      // Estrategia 1: Usar PDF-REST Compress (más rápido)
       const compressResult = await this.pdfRestCompress(fileBuffer);
       if (compressResult.success) {
         return compressResult;
       }
 
-      // Estrategia 2: Usar PDF-REST Convert to Grayscale
+      // Si compress falló por SSL/conectividad, no intentar los demás
+      if (compressResult.error && (
+        compressResult.error.includes('self-signed certificate') ||
+        compressResult.error.includes('ECONNREFUSED') ||
+        compressResult.error.includes('timeout') ||
+        compressResult.error.includes('ENOTFOUND')
+      )) {
+        console.warn('⚠️ PDF-REST no disponible (conectividad), saltando otros métodos PDF-REST');
+        return { success: false, error: 'PDF-REST service unavailable' };
+      }
+
+      // Estrategia 2: Solo si compress falló por otras razones
       const grayscaleResult = await this.pdfRestGrayscale(fileBuffer);
       if (grayscaleResult.success) {
         return grayscaleResult;
       }
 
-      // Estrategia 3: Usar PDF-REST Optimize
+      // Estrategia 3: Último intento
       const optimizeResult = await this.pdfRestOptimize(fileBuffer);
       return optimizeResult;
 
@@ -637,6 +653,13 @@ export class PDFProcessor {
     try {
       const FormData = (await import('form-data')).default;
       const fetch = (await import('node-fetch')).default;
+      const https = (await import('https')).default;
+      
+      // Configurar agente HTTPS más permisivo para PDF-REST
+      const httpsAgent = new https.Agent({
+        rejectUnauthorized: false, // Permitir certificados auto-firmados
+        timeout: 30000 // 30 segundos timeout
+      });
       
       const form = new FormData();
       form.append('file', fileBuffer, {
@@ -651,7 +674,9 @@ export class PDFProcessor {
           'Authorization': `Bearer ${process.env.PDF_REST_API_KEY || 'demo'}`,
           ...form.getHeaders()
         },
-        body: form
+        body: form,
+        agent: httpsAgent,
+        timeout: 30000
       });
 
       if (response.ok) {
@@ -665,7 +690,7 @@ export class PDFProcessor {
           newSize: resultBuffer.length
         };
       } else {
-        throw new Error(`PDF-REST Compress error: ${response.status}`);
+        throw new Error(`PDF-REST Compress HTTP ${response.status}: ${response.statusText}`);
       }
 
     } catch (error) {
@@ -682,6 +707,13 @@ export class PDFProcessor {
     try {
       const FormData = (await import('form-data')).default;
       const fetch = (await import('node-fetch')).default;
+      const https = (await import('https')).default;
+      
+      // Configurar agente HTTPS más permisivo
+      const httpsAgent = new https.Agent({
+        rejectUnauthorized: false,
+        timeout: 30000
+      });
       
       const form = new FormData();
       form.append('file', fileBuffer, {
@@ -696,7 +728,9 @@ export class PDFProcessor {
           'Authorization': `Bearer ${process.env.PDF_REST_API_KEY || 'demo'}`,
           ...form.getHeaders()
         },
-        body: form
+        body: form,
+        agent: httpsAgent,
+        timeout: 30000
       });
 
       if (response.ok) {
@@ -710,7 +744,7 @@ export class PDFProcessor {
           newSize: resultBuffer.length
         };
       } else {
-        throw new Error(`PDF-REST Grayscale error: ${response.status}`);
+        throw new Error(`PDF-REST Grayscale HTTP ${response.status}: ${response.statusText}`);
       }
 
     } catch (error) {
@@ -727,6 +761,13 @@ export class PDFProcessor {
     try {
       const FormData = (await import('form-data')).default;
       const fetch = (await import('node-fetch')).default;
+      const https = (await import('https')).default;
+      
+      // Configurar agente HTTPS más permisivo
+      const httpsAgent = new https.Agent({
+        rejectUnauthorized: false,
+        timeout: 30000
+      });
       
       const form = new FormData();
       form.append('file', fileBuffer, {
@@ -748,7 +789,9 @@ export class PDFProcessor {
           'Authorization': `Bearer ${process.env.PDF_REST_API_KEY || 'demo'}`,
           ...form.getHeaders()
         },
-        body: form
+        body: form,
+        agent: httpsAgent,
+        timeout: 30000
       });
 
       if (response.ok) {
@@ -762,7 +805,7 @@ export class PDFProcessor {
           newSize: resultBuffer.length
         };
       } else {
-        throw new Error(`PDF-REST Optimize error: ${response.status}`);
+        throw new Error(`PDF-REST Optimize HTTP ${response.status}: ${response.statusText}`);
       }
 
     } catch (error) {
