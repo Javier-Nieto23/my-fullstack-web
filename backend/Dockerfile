@@ -8,7 +8,6 @@ RUN apk add --no-cache \
     mupdf-tools \
     ghostscript \
     imagemagick \
-    pdftk \
     libpng-dev \
     libjpeg-turbo-dev \
     && ln -sf /usr/bin/mutool /usr/local/bin/mutool

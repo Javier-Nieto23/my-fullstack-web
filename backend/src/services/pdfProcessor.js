@@ -170,7 +170,7 @@ export class PDFProcessor {
             const alternativeMethods = [
               () => this.imageMagickConversion(outputPath),
               () => this.powerImageMagickConversion(outputPath),
-              () => this.pdftkConversion(outputPath),
+              () => this.ghostscriptImageMagickConversion(outputPath),
               () => this.imageExtractionConversion(outputPath),
               () => this.ghostscriptOnlyConversion(outputPath),
               () => this.pageByPageConversion(outputPath),
@@ -1346,17 +1346,17 @@ export class PDFProcessor {
   }
 
   /**
-   * 📦 CONVERSIÓN CON PDFTK + IMAGEMAGICK
+   * 📦 CONVERSIÓN CON GHOSTSCRIPT + IMAGEMAGICK
    * Descompone PDF y reconstruye con herramientas especializadas
    */
-  async pdftkConversion(filePath) {
+  async ghostscriptImageMagickConversion(filePath) {
     const tempDir = path.dirname(filePath);
     const baseName = path.basename(filePath, '.pdf');
-    const workDir = path.join(tempDir, `${baseName}_pdftk`);
-    const finalFile = filePath + '.pdftk';
+    const workDir = path.join(tempDir, `${baseName}_gs_img`);
+    const finalFile = filePath + '.gs_img';
     
     try {
-      console.log('📦 Aplicando conversión con pdftk + ImageMagick...');
+      console.log('📦 Aplicando conversión con Ghostscript + ImageMagick...');
       
       // Crear directorio de trabajo
       await fs.mkdir(workDir, { recursive: true });
@@ -1397,7 +1397,7 @@ export class PDFProcessor {
       
       // 6. Reemplazar archivo original
       await fs.rename(finalFile, filePath);
-      console.log('✅ Conversión pdftk completada');
+      console.log('✅ Conversión Ghostscript + ImageMagick completada');
       
     } catch (error) {
       // Limpiar en caso de error
