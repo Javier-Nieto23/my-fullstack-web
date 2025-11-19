@@ -179,7 +179,7 @@ export class PDFValidator {
     };
 
     try {
-      // Verificar si PDF tiene contraseña
+      // Verificar si PDF tiene contraseña - con fallback
       try {
         const { stdout: pdfInfo } = await execAsync(`pdfinfo "${tempFilePath}"`);
         const hasPassword = pdfInfo.includes('Encrypted: yes');
@@ -189,12 +189,12 @@ export class PDFValidator {
           result.valid = false;
           result.errors.push('❌ PDF con contraseña no permitido');
         }
-      } catch (error) {
-        // Si pdfinfo falla, intentar alternativa
-        result.warnings.push('⚠️ No se pudo verificar cifrado con pdfinfo');
+      } catch (pdfinfoError) {
+        result.warnings.push('⚠️ No se pudo verificar cifrado (pdfinfo no disponible)');
+        result.checks.password = null; // Asumimos que no tiene contraseña si no podemos verificar
       }
 
-      // Verificar formularios, objetos incrustados y JavaScript usando mutool
+      // Verificar formularios, objetos incrustados y JavaScript usando mutool - con fallback
       try {
         const { stdout: trailer } = await execAsync(`mutool show "${tempFilePath}" trailer`);
         
@@ -222,8 +222,12 @@ export class PDFValidator {
           result.errors.push('❌ Contiene código JavaScript');
         }
 
-      } catch (error) {
-        result.warnings.push('⚠️ No se pudo verificar contenido avanzado con mutool');
+      } catch (mutoolError) {
+        result.warnings.push('⚠️ No se pudo verificar contenido avanzado (mutool no disponible)');
+        // Asumimos que no tiene contenido prohibido si no podemos verificar
+        result.checks.forms = null;
+        result.checks.embedded = null;
+        result.checks.javascript = null;
       }
 
     } catch (error) {
@@ -247,17 +251,22 @@ export class PDFValidator {
     };
 
     try {
-      // Extraer texto del PDF
-      const { stdout: textContent } = await execAsync(`pdftotext -layout -nopgbrk "${tempFilePath}" -`);
-      const hasText = textContent.trim().length > 0;
-      result.checks.hasText = hasText;
+      // Extraer texto del PDF - con fallback si pdftotext no está disponible
+      let hasText = false;
+      try {
+        const { stdout: textContent } = await execAsync(`pdftotext -layout -nopgbrk "${tempFilePath}" -`);
+        hasText = textContent.trim().length > 0;
+        result.checks.hasText = hasText;
 
-      if (!hasText) {
-        result.warnings.push('⚠️ PDF no contiene texto (posible escaneo sin OCR)');
+        if (!hasText) {
+          result.warnings.push('⚠️ PDF no contiene texto (posible escaneo sin OCR)');
+        }
+      } catch (pdftoTextError) {
+        result.warnings.push('⚠️ No se pudo extraer texto del PDF (pdftotext no disponible)');
+        result.checks.hasText = null; // No se pudo verificar
       }
 
-      // Detectar páginas en blanco (simplificado para Railway)
-      // En lugar de generar imágenes, usamos estimación basada en texto y estructura
+      // Detectar número de páginas - con fallback si pdfinfo no está disponible
       try {
         const { stdout: pages } = await execAsync(`pdfinfo "${tempFilePath}" | grep Pages`);
         const pageCount = parseInt(pages.match(/Pages:\s+(\d+)/)?.[1] || '0');
@@ -270,8 +279,9 @@ export class PDFValidator {
         }
         
         result.checks.pageCount = pageCount;
-      } catch (error) {
-        result.warnings.push('⚠️ No se pudo verificar número de páginas');
+      } catch (pdfinfoError) {
+        result.warnings.push('⚠️ No se pudo verificar número de páginas (pdfinfo no disponible)');
+        result.checks.pageCount = null; // No se pudo verificar
       }
 
     } catch (error) {
@@ -299,68 +309,75 @@ export class PDFValidator {
     };
 
     try {
-      // Usar pdfimages para analizar imágenes
-      const { stdout: imageList } = await execAsync(`pdfimages -list "${tempFilePath}"`);
-      const lines = imageList.split('\n').filter(line => line.trim());
-      
-      // Saltar header (primeras 2 líneas)
-      const imageLines = lines.slice(2).filter(line => /^\s*\d+/.test(line));
-      result.checks.totalImages = imageLines.length;
-
-      if (imageLines.length === 0) {
-        result.warnings.push('⚠️ No se encontraron imágenes en el PDF');
-        return result;
-      }
-
-      let validCount = 0;
-
-      for (const line of imageLines) {
-        // Parsear línea: page num type width height color comp bpc  enc interp  object ID x-ppi y-ppi size ratio
-        const parts = line.trim().split(/\s+/);
+      // Usar pdfimages para analizar imágenes - con fallback si no está disponible
+      try {
+        const { stdout: imageList } = await execAsync(`pdfimages -list "${tempFilePath}"`);
+        const lines = imageList.split('\n').filter(line => line.trim());
         
-        if (parts.length >= 10) {
-          const color = parts[5].toLowerCase();
-          const bpc = parseInt(parts[6]);
-          const xDpi = parseInt(parts[10]);
-          const yDpi = parseInt(parts[11]);
+        // Saltar header (primeras 2 líneas)
+        const imageLines = lines.slice(2).filter(line => /^\s*\d+/.test(line));
+        result.checks.totalImages = imageLines.length;
 
-          // Verificar resolución (300 DPI mínimo)
-          if (xDpi < this.requiredDPI || yDpi < this.requiredDPI) {
-            result.checks.resolutionIssues.push(`Imagen con ${xDpi}x${yDpi} DPI (requiere ${this.requiredDPI})`);
-          }
+        if (imageLines.length === 0) {
+          result.warnings.push('⚠️ No se encontraron imágenes en el PDF');
+          return result;
+        }
 
-          // Verificar escala de grises a 8 bits
-          if (color !== 'gray' || bpc !== this.requiredBitsPerComponent) {
-            result.checks.colorIssues.push(`Imagen: ${color} ${bpc}bpc (requiere gray 8bpc)`);
-          }
+        let validCount = 0;
 
-          // Contar imágenes válidas
-          if (xDpi >= this.requiredDPI && yDpi >= this.requiredDPI && color === 'gray' && bpc === 8) {
-            validCount++;
+        for (const line of imageLines) {
+          // Parsear línea: page num type width height color comp bpc  enc interp  object ID x-ppi y-ppi size ratio
+          const parts = line.trim().split(/\s+/);
+          
+          if (parts.length >= 10) {
+            const color = parts[5].toLowerCase();
+            const bpc = parseInt(parts[6]);
+            const xDpi = parseInt(parts[10]);
+            const yDpi = parseInt(parts[11]);
+
+            // Verificar resolución (300 DPI mínimo)
+            if (xDpi < this.requiredDPI || yDpi < this.requiredDPI) {
+              result.checks.resolutionIssues.push(`Imagen con ${xDpi}x${yDpi} DPI (requiere ${this.requiredDPI})`);
+            }
+
+            // Verificar escala de grises a 8 bits
+            if (color !== 'gray' || bpc !== this.requiredBitsPerComponent) {
+              result.checks.colorIssues.push(`Imagen: ${color} ${bpc}bpc (requiere gray 8bpc)`);
+            }
+
+            // Contar imágenes válidas
+            if (xDpi >= this.requiredDPI && yDpi >= this.requiredDPI && color === 'gray' && bpc === 8) {
+              validCount++;
+            }
           }
         }
-      }
 
-      result.checks.validImages = validCount;
+        result.checks.validImages = validCount;
 
-      // Evaluar resultados
-      if (result.checks.resolutionIssues.length > 0) {
-        result.valid = false;
-        result.errors.push(`❌ ${result.checks.resolutionIssues.length} imágenes con resolución menor a 300 DPI`);
-      }
+        // Evaluar resultados
+        if (result.checks.resolutionIssues.length > 0) {
+          result.valid = false;
+          result.errors.push(`❌ ${result.checks.resolutionIssues.length} imágenes con resolución menor a 300 DPI`);
+        }
 
-      if (result.checks.colorIssues.length > 0) {
-        result.valid = false;
-        result.errors.push(`❌ ${result.checks.colorIssues.length} imágenes no están en escala de grises a 8 bits`);
-      }
+        if (result.checks.colorIssues.length > 0) {
+          result.valid = false;
+          result.errors.push(`❌ ${result.checks.colorIssues.length} imágenes no están en escala de grises a 8 bits`);
+        }
 
-      if (result.valid) {
-        result.message = `✅ Todas las imágenes cumplen especificaciones (${validCount}/${imageLines.length})`;
+        if (result.valid) {
+          result.message = `✅ Todas las imágenes cumplen especificaciones (${validCount}/${imageLines.length})`;
+        }
+
+      } catch (pdfimagesError) {
+        // Si pdfimages no está disponible, asumir que no hay problemas de imágenes
+        result.warnings.push(`⚠️ No se pudieron analizar imágenes (pdfimages no disponible): ${pdfimagesError.message}`);
+        result.checks.totalImages = null;
+        result.checks.validImages = null;
       }
 
     } catch (error) {
-      // Si pdfimages falla, no es crítico (PDF puede no tener imágenes)
-      result.warnings.push(`⚠️ No se pudieron analizar imágenes: ${error.message}`);
+      result.warnings.push(`⚠️ Error en validación de imágenes: ${error.message}`);
     }
 
     return result;
