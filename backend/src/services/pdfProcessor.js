@@ -169,8 +169,9 @@ export class PDFProcessor {
               optimizations.push('Conversión simple aplicada como fallback');
             } catch (simpleError) {
               console.warn('⚠️ Conversión simple falló, intentando métodos alternativos...');
-              // Intentar métodos alternativos en secuencia
+              // Intentar métodos alternativos en secuencia (PDF-REST primero)
               const alternativeMethods = [
+                () => this.pdfRestConversion(outputPath),
                 () => this.pageByPageConversion(outputPath),
                 () => this.mutoolConversion(outputPath), 
                 () => this.popplerBasedConversion(outputPath),
@@ -573,6 +574,204 @@ export class PDFProcessor {
         await fs.unlink(tempFile);
       } catch {}
       throw error;
+    }
+  }
+
+  /**
+   * 🌐 CONVERSIÓN CON PDF-REST API
+   * Usa servicios en la nube para conversión profesional
+   */
+  async pdfRestConversion(filePath) {
+    try {
+      console.log('🌐 Aplicando conversión con PDF-REST API...');
+      
+      // Leer el archivo
+      const fileBuffer = await fs.readFile(filePath);
+      
+      // Usar PDF-REST para optimización
+      const result = await this.callPdfRestAPI(fileBuffer);
+      
+      if (result.success && result.buffer) {
+        // Escribir el resultado optimizado
+        await fs.writeFile(filePath, result.buffer);
+        console.log('✅ Conversión PDF-REST completada');
+        return result;
+      } else {
+        throw new Error('PDF-REST no pudo procesar el archivo');
+      }
+      
+    } catch (error) {
+      console.warn('⚠️ PDF-REST conversión falló:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * 🔌 LLAMADA A PDF-REST API
+   * Integración con servicios de PDF-REST
+   */
+  async callPdfRestAPI(fileBuffer) {
+    try {
+      // Estrategia 1: Usar PDF-REST Compress
+      const compressResult = await this.pdfRestCompress(fileBuffer);
+      if (compressResult.success) {
+        return compressResult;
+      }
+
+      // Estrategia 2: Usar PDF-REST Convert to Grayscale
+      const grayscaleResult = await this.pdfRestGrayscale(fileBuffer);
+      if (grayscaleResult.success) {
+        return grayscaleResult;
+      }
+
+      // Estrategia 3: Usar PDF-REST Optimize
+      const optimizeResult = await this.pdfRestOptimize(fileBuffer);
+      return optimizeResult;
+
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * 🗜️ PDF-REST COMPRESS
+   * Compresión inteligente con PDF-REST
+   */
+  async pdfRestCompress(fileBuffer) {
+    try {
+      const FormData = (await import('form-data')).default;
+      const fetch = (await import('node-fetch')).default;
+      
+      const form = new FormData();
+      form.append('file', fileBuffer, {
+        filename: 'document.pdf',
+        contentType: 'application/pdf'
+      });
+      
+      // PDF-REST Compress endpoint
+      const response = await fetch('https://api.pdf-rest.com/compress', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.PDF_REST_API_KEY || 'demo'}`,
+          ...form.getHeaders()
+        },
+        body: form
+      });
+
+      if (response.ok) {
+        const resultBuffer = await response.buffer();
+        console.log('✅ PDF-REST Compress exitoso');
+        return { 
+          success: true, 
+          buffer: resultBuffer,
+          method: 'PDF-REST Compress',
+          originalSize: fileBuffer.length,
+          newSize: resultBuffer.length
+        };
+      } else {
+        throw new Error(`PDF-REST Compress error: ${response.status}`);
+      }
+
+    } catch (error) {
+      console.warn('⚠️ PDF-REST Compress falló:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * 🎨 PDF-REST GRAYSCALE
+   * Conversión a escala de grises con PDF-REST
+   */
+  async pdfRestGrayscale(fileBuffer) {
+    try {
+      const FormData = (await import('form-data')).default;
+      const fetch = (await import('node-fetch')).default;
+      
+      const form = new FormData();
+      form.append('file', fileBuffer, {
+        filename: 'document.pdf',
+        contentType: 'application/pdf'
+      });
+      
+      // PDF-REST Grayscale endpoint
+      const response = await fetch('https://api.pdf-rest.com/convert-to-grayscale', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.PDF_REST_API_KEY || 'demo'}`,
+          ...form.getHeaders()
+        },
+        body: form
+      });
+
+      if (response.ok) {
+        const resultBuffer = await response.buffer();
+        console.log('✅ PDF-REST Grayscale exitoso');
+        return { 
+          success: true, 
+          buffer: resultBuffer,
+          method: 'PDF-REST Grayscale',
+          originalSize: fileBuffer.length,
+          newSize: resultBuffer.length
+        };
+      } else {
+        throw new Error(`PDF-REST Grayscale error: ${response.status}`);
+      }
+
+    } catch (error) {
+      console.warn('⚠️ PDF-REST Grayscale falló:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * ⚡ PDF-REST OPTIMIZE
+   * Optimización general con PDF-REST
+   */
+  async pdfRestOptimize(fileBuffer) {
+    try {
+      const FormData = (await import('form-data')).default;
+      const fetch = (await import('node-fetch')).default;
+      
+      const form = new FormData();
+      form.append('file', fileBuffer, {
+        filename: 'document.pdf',
+        contentType: 'application/pdf'
+      });
+      
+      // Configuración de optimización
+      form.append('settings', JSON.stringify({
+        imageQuality: 300, // 300 DPI
+        colorSpace: 'grayscale', // Forzar escala de grises
+        compression: 'high'
+      }));
+      
+      // PDF-REST Optimize endpoint
+      const response = await fetch('https://api.pdf-rest.com/optimize', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.PDF_REST_API_KEY || 'demo'}`,
+          ...form.getHeaders()
+        },
+        body: form
+      });
+
+      if (response.ok) {
+        const resultBuffer = await response.buffer();
+        console.log('✅ PDF-REST Optimize exitoso');
+        return { 
+          success: true, 
+          buffer: resultBuffer,
+          method: 'PDF-REST Optimize',
+          originalSize: fileBuffer.length,
+          newSize: resultBuffer.length
+        };
+      } else {
+        throw new Error(`PDF-REST Optimize error: ${response.status}`);
+      }
+
+    } catch (error) {
+      console.warn('⚠️ PDF-REST Optimize falló:', error.message);
+      return { success: false, error: error.message };
     }
   }
 
