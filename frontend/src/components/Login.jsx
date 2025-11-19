@@ -13,11 +13,6 @@ const Login = () => {
 
   const navigate = useNavigate();
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
-  
-  console.log('🔧 Environment variables:');
-  console.log('VITE_API_URL from env:', import.meta.env.VITE_API_URL);
-  console.log('Final API_URL:', API_URL);
-  console.log('Current origin:', window.location.origin);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -35,9 +30,6 @@ const Login = () => {
     setLoading(true);
 
     try {
-      console.log('🔗 Intentando conectar a:', API_URL);
-      console.log('📧 Email:', email);
-      
       const response = await fetch(`${API_URL}/auth/login`, {
         method: "POST",
         headers: {
@@ -49,11 +41,7 @@ const Login = () => {
         }),
       });
 
-      console.log('📡 Response status:', response.status);
-      console.log('📡 Response ok:', response.ok);
-
       const data = await response.json();
-      console.log('📦 Response data:', data);
 
       if (!response.ok) {
         setAlertMsg({
@@ -77,10 +65,10 @@ const Login = () => {
         navigate("/verificacion");
       }, 1500);
     } catch (error) {
-      console.error("❌ Error completo:", error);
+      console.error("Error:", error);
       setAlertMsg({
         type: "danger",
-        text: `Error de conexión: ${error.message}. API URL: ${API_URL}`,
+        text: "Error de conexión. Intenta nuevamente.",
       });
       setLoading(false);
     }
@@ -89,7 +77,7 @@ const Login = () => {
   return (
     <div className="login-page">
       <div className="login-header" style={{ textAlign: "center", marginBottom: 14 }}>
-        <img src="/LOGONegro.png" alt="CAAST" className="logo" />
+        <img src="img/LOGONegro.png" alt="CAAST" className="logo" />
         <h1 className="welcome-title">Bienvenido de vuelta</h1>
         <p className="welcome-subtitle">Accede a tu centro de cumplimiento fiscal</p>
       </div>

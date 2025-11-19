@@ -85,7 +85,7 @@ const RecuperarContrasena = () => {
   return (
     <div className="login-page">
       <div className="login-header" style={{ textAlign: "center", marginBottom: 14 }}>
-        <img src="/LOGONegro.png" alt="CAAST" className="logo" />
+        <img src="img/LOGONegro.png" alt="CAAST" className="logo" />
         <h1 className="welcome-title">Recuperar Contraseña</h1>
         <p className="welcome-subtitle">Restablece el acceso a tu cuenta</p>
       </div>
