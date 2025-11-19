@@ -155,44 +155,40 @@ export class PDFProcessor {
         await this.extremeConversion(outputPath);
         optimizations.push('Conversión extrema aplicada');
         
-        // 🔥 Si TODAVÍA no cumple, aplicar rasterización completa
+        // 🔥 Si TODAVÍA no cumple, usar PDF-REST directamente (más confiable que rasterización)
         const secondVerify = await this.quickImageCheck(outputPath);
         if (!secondVerify.success) {
-          console.log('🔥 Aplicando rasterización completa como último recurso...');
+          console.log('🌐 Aplicando PDF-REST como método preferido...');
+          
           try {
-            await this.fullRasterization(outputPath);
-            optimizations.push('Rasterización completa aplicada');
-          } catch (rasterError) {
-            console.warn('⚠️ Rasterización completa falló, aplicando conversión simple...');
-            try {
-              await this.simpleGrayscaleConversion(outputPath);
-              optimizations.push('Conversión simple aplicada como fallback');
-            } catch (simpleError) {
-              console.warn('⚠️ Conversión simple falló, intentando métodos alternativos...');
-              // Intentar métodos alternativos en secuencia (PDF-REST primero)
-              const alternativeMethods = [
-                () => this.pdfRestConversion(outputPath),
-                () => this.pageByPageConversion(outputPath),
-                () => this.mutoolConversion(outputPath), 
-                () => this.popplerBasedConversion(outputPath),
-                () => this.ultraBasicConversion(outputPath)
-              ];
-              
-              let fallbackSuccess = false;
-              for (const method of alternativeMethods) {
-                try {
-                  await method();
-                  optimizations.push('Método alternativo aplicado exitosamente');
-                  fallbackSuccess = true;
-                  break;
-                } catch (altError) {
-                  console.warn(`⚠️ Método alternativo falló: ${altError.message}`);
-                }
+            await this.pdfRestConversion(outputPath);
+            optimizations.push('PDF-REST aplicado exitosamente');
+          } catch (pdfRestError) {
+            console.warn('⚠️ PDF-REST falló, intentando métodos alternativos...');
+            
+            // Métodos alternativos (sin rasterización problemática)
+            const alternativeMethods = [
+              () => this.pageByPageConversion(outputPath),
+              () => this.simpleGrayscaleConversion(outputPath),
+              () => this.mutoolConversion(outputPath), 
+              () => this.popplerBasedConversion(outputPath),
+              () => this.ultraBasicConversion(outputPath)
+            ];
+            
+            let fallbackSuccess = false;
+            for (const method of alternativeMethods) {
+              try {
+                await method();
+                optimizations.push('Método alternativo aplicado exitosamente');
+                fallbackSuccess = true;
+                break;
+              } catch (altError) {
+                console.warn(`⚠️ Método alternativo falló: ${altError.message}`);
               }
-              
-              if (!fallbackSuccess) {
-                optimizations.push('Múltiples conversiones fallaron - usando mejor resultado disponible');
-              }
+            }
+            
+            if (!fallbackSuccess) {
+              optimizations.push('Múltiples conversiones fallaron - usando mejor resultado disponible');
             }
           }
         }
@@ -776,7 +772,9 @@ export class PDFProcessor {
   }
 
   /**
-   * 🔥🔥 RASTERIZACIÓN COMPLETA - ÚLTIMO RECURSO
+   * 🔥🔥 RASTERIZACIÓN COMPLETA - DESHABILITADA TEMPORALMENTE
+   * NOTA: Causa errores "syntaxerror in (binary token, type=137)" consistentes
+   * Reemplazada por PDF-REST como método preferido después de conversión extrema
    * Convierte el PDF completo a imágenes y luego reconstruye
    * Garantiza conversión total a escala de grises 8-bit y 300 DPI
    */
