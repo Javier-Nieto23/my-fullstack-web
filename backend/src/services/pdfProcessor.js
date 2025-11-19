@@ -36,8 +36,9 @@ export class PDFProcessor {
       tempInputFile = await this.createTempFile(fileBuffer, 'input.pdf');
       tempOutputFile = await this.createTempFile(Buffer.alloc(0), 'output.pdf');
 
-      // Procesar el PDF
-      const processResult = await this.optimizePDF(tempInputFile, tempOutputFile);
+      // Procesar el PDF con método simple (temporal para pruebas paso a paso)
+      console.log('🎯 Usando método simplificado para escala de grises solamente');
+      const processResult = await this.simpleGrayscaleOnly(tempInputFile, tempOutputFile);
       
       // Leer el archivo procesado
       const processedBuffer = await fs.readFile(tempOutputFile);
