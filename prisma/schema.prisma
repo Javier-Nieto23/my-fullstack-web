@@ -21,4 +21,26 @@ model User {
   password  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  
+  // Relación con documentos
+  documents Document[]
+}
+
+model Document {
+  id           Int      @id @default(autoincrement())
+  name         String
+  originalName String
+  size         Int
+  status       String   // 'processed', 'sent', 'non_compliant'
+  company      String
+  uploadDate   DateTime @default(now())
+  processedAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // Relación con usuario
+  userId       Int
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
 }

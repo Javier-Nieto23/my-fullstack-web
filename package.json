@@ -18,7 +18,9 @@
   "author": "Javier Nieto",
   "license": "MIT",
   "devDependencies": {
-    "prisma": "^5.13.0"
+    "prisma": "^6.19.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.19.0"
   }
 }
-

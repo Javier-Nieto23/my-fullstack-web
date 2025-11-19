@@ -4,6 +4,11 @@ import 'dotenv/config'
 import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
+import multer from 'multer'
+import fetch from 'node-fetch'
+import FormData from 'form-data'
+import fs from 'fs'
+import path from 'path'
 
 const app = express()
 
@@ -11,16 +16,30 @@ const prisma = new PrismaClient()
 
 app.use(express.json())
 
-// Logging para debug
-console.log('🔧 Configurando CORS...')
-console.log('NODE_ENV:', process.env.NODE_ENV)
-console.log('FRONTEND_URL:', process.env.FRONTEND_URL)
+// Configurar CORS para soportar Railway y desarrollo local
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'production'
+    ? [process.env.FRONTEND_URL || 'https://my-fullstack-web-seven.vercel.app']
+    : ['http://localhost:5173', 'http://localhost:3000', 'https://my-fullstack-web-seven.vercel.app'],
+  credentials: true,
+  optionsSuccessStatus: 200
+}
 
-// Configurar CORS simple para debug
-app.use(cors({
-  origin: true, // Permitir todos los orígenes temporalmente
-  credentials: true
-}))
+app.use(cors(corsOptions))
+
+// Configurar multer para manejo de archivos
+const storage = multer.memoryStorage()
+const upload = multer({ 
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true)
+    } else {
+      cb(new Error('Solo se permiten archivos PDF'))
+    }
+  }
+})
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
 const SALT_ROUNDS = 10
@@ -41,6 +60,200 @@ const verifyToken = (req, res, next) => {
     return res.status(401).json({ error: 'Token inválido' })
   }
 }
+
+// ===========================================
+// ENDPOINTS DE DOCUMENTOS PDF
+// ===========================================
+
+// POST /documents/upload - Subir y procesar PDF
+app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'No se proporcionó archivo PDF' })
+    }
+
+    const { originalname, buffer, size } = req.file
+    const userId = req.user.id
+
+    // Validaciones
+    if (size > 5 * 1024 * 1024) {
+      return res.status(400).json({ error: 'El archivo excede el tamaño máximo (5MB)' })
+    }
+
+    // Simular procesamiento con servicio Python (opcional)
+    let processedStatus = 'processed'
+    let complianceCheck = Math.random() > 0.3 // 70% probabilidad de cumplir
+
+    if (!complianceCheck) {
+      processedStatus = 'non_compliant'
+    }
+
+    // Guardar información del documento en base de datos
+    const document = await prisma.document.create({
+      data: {
+        name: originalname,
+        originalName: originalname,
+        size: size,
+        status: processedStatus,
+        userId: userId,
+        company: 'Empresa Demo', // Por ahora valor fijo
+        uploadDate: new Date(),
+        processedAt: processedStatus === 'processed' ? new Date() : null
+      }
+    })
+
+    res.status(201).json({
+      message: 'Documento procesado exitosamente',
+      document: {
+        id: document.id,
+        name: document.name,
+        status: document.status,
+        size: document.size,
+        uploadDate: document.uploadDate,
+        company: document.company
+      }
+    })
+
+  } catch (error) {
+    console.error('Error procesando documento:', error)
+    res.status(500).json({ error: 'Error al procesar documento' })
+  }
+})
+
+// GET /documents - Obtener documentos del usuario
+app.get('/documents', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.id
+
+    const documents = await prisma.document.findMany({
+      where: { userId },
+      orderBy: { uploadDate: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        originalName: true,
+        size: true,
+        status: true,
+        company: true,
+        uploadDate: true,
+        processedAt: true
+      }
+    })
+
+    res.status(200).json(documents)
+  } catch (error) {
+    console.error('Error obteniendo documentos:', error)
+    res.status(500).json({ error: 'Error al obtener documentos' })
+  }
+})
+
+// DELETE /documents/:id - Eliminar documento
+app.delete('/documents/:id', verifyToken, async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id)
+    const userId = req.user.id
+
+    // Verificar que el documento pertenezca al usuario
+    const document = await prisma.document.findFirst({
+      where: {
+        id: documentId,
+        userId: userId
+      }
+    })
+
+    if (!document) {
+      return res.status(404).json({ error: 'Documento no encontrado' })
+    }
+
+    await prisma.document.delete({
+      where: { id: documentId }
+    })
+
+    res.status(200).json({ message: 'Documento eliminado exitosamente' })
+  } catch (error) {
+    console.error('Error eliminando documento:', error)
+    res.status(500).json({ error: 'Error al eliminar documento' })
+  }
+})
+
+// GET /documents/:id - Obtener documento específico
+app.get('/documents/:id', verifyToken, async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id)
+    const userId = req.user.id
+
+    const document = await prisma.document.findFirst({
+      where: {
+        id: documentId,
+        userId: userId
+      }
+    })
+
+    if (!document) {
+      return res.status(404).json({ error: 'Documento no encontrado' })
+    }
+
+    res.status(200).json(document)
+  } catch (error) {
+    console.error('Error obteniendo documento:', error)
+    res.status(500).json({ error: 'Error al obtener documento' })
+  }
+})
+
+// GET /documents/stats - Obtener estadísticas de documentos
+app.get('/documents/stats', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.id
+
+    const stats = await prisma.document.groupBy({
+      by: ['status'],
+      where: { userId },
+      _count: {
+        status: true
+      }
+    })
+
+    const result = {
+      procesados: 0,
+      enviados: 0,
+      noCumplidos: 0,
+      total: 0
+    }
+
+    stats.forEach(stat => {
+      result.total += stat._count.status
+      switch (stat.status) {
+        case 'processed':
+          result.procesados = stat._count.status
+          break
+        case 'sent':
+          result.enviados = stat._count.status
+          break
+        case 'non_compliant':
+          result.noCumplidos = stat._count.status
+          break
+      }
+    })
+
+    // Contar empresas únicas
+    const companies = await prisma.document.findMany({
+      where: { userId },
+      select: { company: true },
+      distinct: ['company']
+    })
+
+    result.misEmpresas = companies.length
+
+    res.status(200).json(result)
+  } catch (error) {
+    console.error('Error obteniendo estadísticas:', error)
+    res.status(500).json({ error: 'Error al obtener estadísticas' })
+  }
+})
+
+// ===========================================
+// ENDPOINTS DE AUTENTICACIÓN
+// ===========================================
 
 // POST /auth/register - Registrar nuevo usuario
 app.post('/auth/register', async (req, res) => {
@@ -185,26 +398,8 @@ app.get('/auth/me', verifyToken, async (req, res) => {
   }
 })
 
-// GET /health - Health check
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
-  })
-})
-
-// GET / - Root endpoint
-app.get('/', (req, res) => {
-  res.json({ 
-    message: 'Backend API funcionando correctamente',
-    endpoints: ['/health', '/items', '/auth/register', '/auth/login']
-  })
-})
-
 // GET /items (endpoint existente para pruebas)
 app.get('/items', (req, res) => {
-  console.log('📦 Request to /items endpoint')
   res.json([
     { id: 1, name: 'Juego Zelda' },
     { id: 2, name: 'Consola Switch' },
@@ -260,12 +455,4 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Servidor backend escuchando en puerto ${PORT}`)
   console.log(`Base de datos conectada`)
   console.log(`Environment: ${process.env.NODE_ENV || 'development'}`)
-  
-  // Listar rutas registradas
-  console.log('📋 Rutas registradas:')
-  app._router.stack.forEach((r) => {
-    if (r.route) {
-      console.log(`  ${Object.keys(r.route.methods)[0].toUpperCase()} ${r.route.path}`)
-    }
-  })
 })
