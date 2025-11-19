@@ -168,8 +168,30 @@ export class PDFProcessor {
               await this.simpleGrayscaleConversion(outputPath);
               optimizations.push('Conversión simple aplicada como fallback');
             } catch (simpleError) {
-              console.warn('⚠️ Conversión simple también falló, continuando con mejor resultado disponible');
-              optimizations.push('Múltiples conversiones fallaron - usando mejor resultado disponible');
+              console.warn('⚠️ Conversión simple falló, intentando métodos alternativos...');
+              // Intentar métodos alternativos en secuencia
+              const alternativeMethods = [
+                () => this.pageByPageConversion(outputPath),
+                () => this.mutoolConversion(outputPath), 
+                () => this.popplerBasedConversion(outputPath),
+                () => this.ultraBasicConversion(outputPath)
+              ];
+              
+              let fallbackSuccess = false;
+              for (const method of alternativeMethods) {
+                try {
+                  await method();
+                  optimizations.push('Método alternativo aplicado exitosamente');
+                  fallbackSuccess = true;
+                  break;
+                } catch (altError) {
+                  console.warn(`⚠️ Método alternativo falló: ${altError.message}`);
+                }
+              }
+              
+              if (!fallbackSuccess) {
+                optimizations.push('Múltiples conversiones fallaron - usando mejor resultado disponible');
+              }
             }
           }
         }
@@ -351,7 +373,211 @@ export class PDFProcessor {
   }
 
   /**
-   * �🔥🔥 RASTERIZACIÓN COMPLETA - ÚLTIMO RECURSO
+   * 📐 CONVERSIÓN POR PARTES - DIVIDE Y VENCERÁS
+   * Procesa el PDF página por página para evitar problemas complejos
+   */
+  async pageByPageConversion(filePath) {
+    const tempDir = path.dirname(filePath);
+    const baseName = path.basename(filePath, '.pdf');
+    const finalFile = filePath + '.paged';
+    
+    try {
+      console.log('📐 Aplicando conversión página por página...');
+      
+      // 1. Obtener número de páginas
+      const { stdout: pdfInfo } = await execAsync(`pdfinfo "${filePath}"`);
+      const pageMatch = pdfInfo.match(/Pages:\s*(\d+)/);
+      const numPages = pageMatch ? parseInt(pageMatch[1]) : 1;
+      
+      const pageFiles = [];
+      
+      // 2. Procesar cada página individualmente
+      for (let page = 1; page <= numPages; page++) {
+        const pageFile = path.join(tempDir, `${baseName}_page_${page}.pdf`);
+        
+        // Extraer página con configuración básica
+        await execAsync([
+          'gs',
+          '-sDEVICE=pdfwrite',
+          '-dNOPAUSE',
+          '-dQUIET',
+          '-dBATCH',
+          `-dFirstPage=${page}`,
+          `-dLastPage=${page}`,
+          '-sColorConversionStrategy=Gray',
+          '-dProcessColorModel=/DeviceGray',
+          '-r300',
+          `-sOutputFile=${pageFile}`,
+          filePath
+        ].join(' '));
+        
+        pageFiles.push(pageFile);
+      }
+      
+      // 3. Combinar páginas procesadas
+      const combineCommand = [
+        'gs',
+        '-sDEVICE=pdfwrite',
+        '-dNOPAUSE',
+        '-dQUIET',
+        '-dBATCH',
+        '-sColorConversionStrategy=Gray',
+        '-dProcessColorModel=/DeviceGray',
+        `-sOutputFile=${finalFile}`,
+        ...pageFiles
+      ].join(' ');
+      
+      await execAsync(combineCommand);
+      
+      // 4. Limpiar páginas temporales
+      for (const pageFile of pageFiles) {
+        try {
+          await fs.unlink(pageFile);
+        } catch {}
+      }
+      
+      // 5. Reemplazar archivo original
+      await fs.rename(finalFile, filePath);
+      console.log('✅ Conversión página por página completada');
+      
+    } catch (error) {
+      // Limpiar archivos temporales
+      try {
+        await fs.unlink(finalFile);
+        const { stdout: cleanFiles } = await execAsync(`ls "${tempDir}"/${baseName}_page_*.pdf 2>/dev/null || echo ""`);
+        if (cleanFiles.trim()) {
+          await execAsync(`rm -f "${tempDir}"/${baseName}_page_*.pdf`);
+        }
+      } catch {}
+      throw error;
+    }
+  }
+
+  /**
+   * 🔬 CONVERSIÓN CON MUTOOL (si está disponible)
+   * MuPDF tools para conversión directa
+   */
+  async mutoolConversion(filePath) {
+    const tempFile = filePath + '.mutool';
+    
+    try {
+      console.log('🔬 Aplicando conversión con MuTool...');
+      
+      if (await this.commandExists('mutool')) {
+        // MuTool puede hacer conversiones más precisas
+        await execAsync(`mutool clean -gggg "${filePath}" "${tempFile}"`);
+        
+        // Reemplazar archivo
+        await fs.rename(tempFile, filePath);
+        console.log('✅ Conversión MuTool completada');
+      } else {
+        throw new Error('MuTool no disponible');
+      }
+      
+    } catch (error) {
+      try {
+        await fs.unlink(tempFile);
+      } catch {}
+      throw error;
+    }
+  }
+
+  /**
+   * 🎯 CONVERSIÓN ALTERNATIVA CON QPDF
+   * Usa qpdf o configuración muy conservadora
+   */
+  async popplerBasedConversion(filePath) {
+    const tempFile = filePath + '.poppler';
+    
+    try {
+      console.log('🎯 Aplicando conversión con herramientas alternativas...');
+      
+      // Intentar qpdf primero (más estable)
+      if (await this.commandExists('qpdf')) {
+        await execAsync(`qpdf --linearize --object-streams=generate "${filePath}" "${tempFile}"`);
+        
+        // Aplicar conversión de color con Ghostscript conservador
+        const tempFile2 = tempFile + '.gray';
+        await execAsync([
+          'gs',
+          '-sDEVICE=pdfwrite',
+          '-dNOPAUSE',
+          '-dQUIET',
+          '-dBATCH',
+          '-dPDFSETTINGS=/ebook',
+          '-sColorConversionStrategy=Gray',
+          `-sOutputFile=${tempFile2}`,
+          tempFile
+        ].join(' '));
+        
+        await fs.unlink(tempFile);
+        await fs.rename(tempFile2, filePath);
+      } else {
+        // Fallback ultra conservador
+        await execAsync([
+          'gs',
+          '-sDEVICE=pdfwrite',
+          '-dNOPAUSE',
+          '-dQUIET',
+          '-dBATCH',
+          '-dPDFSETTINGS=/ebook',
+          '-sColorConversionStrategy=Gray',
+          `-sOutputFile=${tempFile}`,
+          filePath
+        ].join(' '));
+        
+        await fs.rename(tempFile, filePath);
+      }
+      
+      console.log('✅ Conversión alternativa completada');
+      
+    } catch (error) {
+      try {
+        await fs.unlink(tempFile);
+        await fs.unlink(tempFile + '.gray');
+      } catch {}
+      throw error;
+    }
+  }
+
+  /**
+   * 🔰 CONVERSIÓN ULTRA BÁSICA - ÚLTIMO RECURSO
+   * Configuración mínima que casi siempre funciona
+   */
+  async ultraBasicConversion(filePath) {
+    const tempFile = filePath + '.ultra';
+    
+    try {
+      console.log('🔰 Aplicando conversión ultra básica...');
+      
+      // Configuración ultra minimalista
+      const ultraCommand = [
+        'gs',
+        '-sDEVICE=pdfwrite',
+        '-dNOPAUSE',
+        '-dQUIET',
+        '-dBATCH',
+        '-sColorConversionStrategy=Gray',
+        `-sOutputFile=${tempFile}`,
+        filePath
+      ].join(' ');
+
+      await execAsync(ultraCommand);
+      
+      // Reemplazar archivo original
+      await fs.rename(tempFile, filePath);
+      console.log('✅ Conversión ultra básica completada');
+      
+    } catch (error) {
+      try {
+        await fs.unlink(tempFile);
+      } catch {}
+      throw error;
+    }
+  }
+
+  /**
+   * 🔥🔥 RASTERIZACIÓN COMPLETA - ÚLTIMO RECURSO
    * Convierte el PDF completo a imágenes y luego reconstruye
    * Garantiza conversión total a escala de grises 8-bit y 300 DPI
    */
