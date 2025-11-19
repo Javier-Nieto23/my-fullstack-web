@@ -7,6 +7,7 @@ ConvertAPI es un servicio líder en conversión de documentos en la nube que ofr
 ## 🔑 Configuración de API Key
 
 ### 1. Obtener API Secret
+
 - Visita: https://www.convertapi.com/
 - Regístrate para obtener tu API secret
 - Plan gratuito: 250 conversiones/mes
@@ -15,24 +16,28 @@ ConvertAPI es un servicio líder en conversión de documentos en la nube que ofr
 ### 2. Configurar Variable de Entorno
 
 **Railway:**
+
 ```bash
 # En Railway Dashboard > Variables
 CONVERTAPI_SECRET=tu_secret_aqui
 ```
 
 **Desarrollo Local:**
+
 ```bash
 # En archivo .env
 CONVERTAPI_SECRET=tu_secret_aqui
 ```
 
 **Sin API Secret:**
+
 - El sistema usa 'demo' como fallback
 - Funcionalidad limitada pero disponible para pruebas
 
 ## 🔄 Servicios Implementados
 
 ### 1. ⚡ PDF Optimize
+
 ```
 Endpoint: https://v2.convertapi.com/convert/pdf/to/pdf
 Función: Optimización completa con parámetros personalizados
@@ -41,6 +46,7 @@ Ideal para: Conversión completa según nuestros requerimientos
 ```
 
 ### 2. 📋 PDF to PDF/A
+
 ```
 Endpoint: https://v2.convertapi.com/convert/pdf/to/pdfa
 Función: Conversión a estándar archival con escala grises
@@ -49,6 +55,7 @@ Ideal para: Estándares de archivo y compatibilidad máxima
 ```
 
 ### 3. 🗜️ PDF Compress
+
 ```
 Endpoint: https://v2.convertapi.com/convert/pdf/to/compress
 Función: Compresión básica manteniendo calidad
@@ -81,6 +88,7 @@ Ideal para: Reducir tamaño cuando otros métodos fallan
 ## 📊 Configuración Implementada
 
 ### PDF Optimize
+
 ```javascript
 {
   ImageDpi: '300',          // 300 DPI exactos
@@ -92,6 +100,7 @@ Ideal para: Reducir tamaño cuando otros métodos fallan
 ```
 
 ### PDF/A Conversion
+
 ```javascript
 {
   PdfAVersion: '1b',        // PDF/A-1b estándar
@@ -104,13 +113,15 @@ Ideal para: Reducir tamaño cuando otros métodos fallan
 ## 🔍 Logs de Seguimiento
 
 El sistema registra qué servicio ConvertAPI fue exitoso:
+
 - `✅ ConvertAPI Optimize exitoso`
-- `✅ ConvertAPI PDF/A exitoso`  
+- `✅ ConvertAPI PDF/A exitoso`
 - `✅ ConvertAPI Compress exitoso`
 
 ## 🔧 Implementación Técnica
 
 ### Método Principal
+
 ```javascript
 async convertApiConversion(filePath) {
   // 1. Lee archivo local
@@ -121,6 +132,7 @@ async convertApiConversion(filePath) {
 ```
 
 ### Estrategias Secuenciales
+
 ```javascript
 // Prueba 3 servicios en orden de efectividad:
 1. Optimize (conversión completa personalizada)
