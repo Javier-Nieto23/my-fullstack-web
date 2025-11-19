@@ -11,7 +11,12 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
+import { exec } from 'child_process'
+import { promisify } from 'util'
 import r2Service from './services/cloudflareR2.js'
+import { pdfValidator } from './services/pdfValidator.js'
+
+const execAsync = promisify(exec)
 
 const app = express()
 
@@ -90,11 +95,49 @@ app.get('/health', async (req, res) => {
     // Verificar configuración de Cloudflare R2
     const r2Status = r2Service.isConfigured() ? 'configured' : 'not configured'
     
+    // Verificar herramientas de validación PDF (pdfinfo, pdfimages, mutool)
+    const toolsStatus = {
+      pdfinfo: 'checking...',
+      pdfimages: 'checking...',
+      mutool: 'checking...'
+    }
+    
+    try {
+      await execAsync('pdfinfo -v')
+      toolsStatus.pdfinfo = 'available'
+    } catch {
+      toolsStatus.pdfinfo = 'missing'
+    }
+    
+    try {
+      await execAsync('pdfimages -help')
+      toolsStatus.pdfimages = 'available'
+    } catch {
+      toolsStatus.pdfimages = 'missing'
+    }
+    
+    try {
+      await execAsync('mutool -v')
+      toolsStatus.mutool = 'available'
+    } catch {
+      toolsStatus.mutool = 'missing'
+    }
+    
     res.json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
       database: 'connected',
       cloudflareR2: r2Status,
+      pdfValidation: {
+        service: 'enabled',
+        tools: toolsStatus,
+        specifications: {
+          maxSize: '3 MB',
+          requiredDPI: '300',
+          colorMode: 'grayscale 8-bit',
+          contentRestrictions: ['no-password', 'no-forms', 'no-javascript', 'no-embedded']
+        }
+      },
       uptime: process.uptime(),
       memory: process.memoryUsage(),
       environment: process.env.NODE_ENV || 'development'
@@ -105,6 +148,7 @@ app.get('/health', async (req, res) => {
       timestamp: new Date().toISOString(),
       database: 'disconnected',
       cloudflareR2: 'unknown',
+      pdfValidation: 'error',
       error: error.message,
       environment: process.env.NODE_ENV || 'development'
     })
@@ -159,42 +203,51 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
     const { originalname, buffer, size, mimetype } = req.file
     const userId = req.user.id
 
-    // Validaciones
-    if (size > 10 * 1024 * 1024) {
-      return res.status(400).json({ error: 'El archivo excede el tamaño máximo (10MB)' })
+    console.log('🔍 Iniciando validación del PDF:', originalname)
+
+    // 1️⃣ VALIDACIÓN COMPLETA DEL PDF (usando funciones de Joel adaptadas)
+    const validationResult = await pdfValidator.validatePDF(buffer, originalname)
+    
+    console.log('� Resultado de validación:')
+    console.log(pdfValidator.generateDetailedReport(validationResult))
+
+    // Si no pasa validación, rechazar inmediatamente
+    if (!validationResult.valid) {
+      return res.status(400).json({
+        error: 'PDF no cumple con las especificaciones requeridas',
+        details: {
+          summary: validationResult.summary,
+          errors: validationResult.errors,
+          warnings: validationResult.warnings,
+          checks: validationResult.checks
+        }
+      })
     }
 
-    // Subir archivo a Cloudflare R2
-    console.log('🚀 Subiendo archivo a Cloudflare R2:', originalname)
+    // 2️⃣ SUBIR A CLOUDFLARE R2 (solo si pasa validación)
+    console.log('✅ PDF válido. Subiendo a Cloudflare R2:', originalname)
     const uploadResult = await r2Service.uploadFile(buffer, originalname, mimetype)
 
-    // Simular procesamiento con servicio Python (opcional)
-    let processedStatus = 'processed'
-    let complianceCheck = Math.random() > 0.3 // 70% probabilidad de cumplir
-
-    if (!complianceCheck) {
-      processedStatus = 'non_compliant'
-    }
-
-    // Guardar información del documento en base de datos
+    // 3️⃣ GUARDAR EN BASE DE DATOS
     const document = await prisma.document.create({
       data: {
         name: originalname,
         originalName: originalname,
         size: size,
-        status: processedStatus,
+        status: 'processed', // Solo llega aquí si está validado
         userId: userId,
-        company: 'Empresa Demo', // Por ahora valor fijo
+        company: 'Empresa Demo',
         uploadDate: new Date(),
-        processedAt: processedStatus === 'processed' ? new Date() : null,
-        filePath: uploadResult.key // Guardar key de R2
+        processedAt: new Date(), // PDF validado = procesado inmediatamente
+        filePath: uploadResult.key // Key de R2
       }
     })
 
     console.log('✅ Documento guardado en BD:', document.id)
 
     res.status(201).json({
-      message: 'Documento procesado y almacenado exitosamente en Cloudflare R2',
+      success: true,
+      message: '✅ PDF validado y almacenado exitosamente',
       document: {
         id: document.id,
         name: document.name,
@@ -202,11 +255,17 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
         size: document.size,
         uploadDate: document.uploadDate,
         company: document.company,
-        fileUrl: `/api/documents/${document.id}/view`,
-        cloudflare: {
-          stored: true,
-          key: uploadResult.key
-        }
+        fileUrl: `/api/documents/${document.id}/view`
+      },
+      validation: {
+        summary: validationResult.summary,
+        warnings: validationResult.warnings,
+        details: validationResult.checks
+      },
+      storage: {
+        provider: 'Cloudflare R2',
+        key: uploadResult.key,
+        stored: true
       }
     })
 
