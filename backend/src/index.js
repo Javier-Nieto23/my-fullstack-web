@@ -19,7 +19,13 @@ app.use(express.json())
 // Configurar CORS para soportar Railway y desarrollo local
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production'
-    ? [process.env.FRONTEND_URL || 'https://my-fullstack-web-seven.vercel.app']
+    ? [
+        process.env.FRONTEND_URL || 'https://my-fullstack-web-seven.vercel.app',
+        'https://my-fullstack-web-seven.vercel.app',
+        'https://my-fullstack-web.vercel.app',
+        // Permitir cualquier subdominio de vercel.app para tu proyecto
+        /.*\.vercel\.app$/
+      ]
     : ['http://localhost:5173', 'http://localhost:3000', 'https://my-fullstack-web-seven.vercel.app'],
   credentials: true,
   optionsSuccessStatus: 200
