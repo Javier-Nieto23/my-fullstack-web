@@ -6,10 +6,11 @@ RUN apk add --no-cache \
     openssl \
     poppler-utils \
     mupdf-tools \
+    ghostscript \
     && ln -sf /usr/bin/mutool /usr/local/bin/mutool
 
 # Verificar que las herramientas estén disponibles
-RUN pdfinfo -v && pdfimages -help && mutool -v
+RUN pdfinfo -v && pdfimages -help && mutool -v && gs --version
 
 # Copiar archivos de dependencias del backend
 COPY backend/package*.json ./

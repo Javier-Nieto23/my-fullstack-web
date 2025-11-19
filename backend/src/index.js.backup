@@ -123,13 +123,6 @@ app.get('/health', async (req, res) => {
     } catch {
       toolsStatus.mutool = 'missing'
     }
-
-    try {
-      await execAsync('gs --version')
-      toolsStatus.ghostscript = 'available'
-    } catch {
-      toolsStatus.ghostscript = 'missing'
-    }
     
     res.json({
       status: 'healthy',
@@ -145,11 +138,6 @@ app.get('/health', async (req, res) => {
           colorMode: 'grayscale 8-bit',
           contentRestrictions: ['no-password', 'no-forms', 'no-javascript', 'no-embedded']
         }
-      },
-      pdfProcessing: {
-        service: 'enabled',
-        autoConversion: 'active',
-        features: ['grayscale-conversion', 'dpi-optimization', 'compression', 'size-reduction']
       },
       uptime: process.uptime(),
       memory: process.memoryUsage(),
@@ -216,46 +204,18 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
     const { originalname, buffer, size, mimetype } = req.file
     const userId = req.user.id
 
-    console.log('🔍 Iniciando validación y procesamiento PDF:', originalname)
+    console.log('🔍 Iniciando validación del PDF:', originalname)
 
-    // 1️⃣ VALIDACIÓN INICIAL DEL PDF
-    const initialValidation = await pdfValidator.validatePDF(buffer, originalname)
-    
-    let finalBuffer = buffer;
-    let wasProcessed = false;
-    let processingReport = '';
-
-    // 2️⃣ Si no cumple especificaciones, procesarlo automáticamente
-    if (!initialValidation.valid) {
-      console.log('🔄 PDF no cumple especificaciones. Procesando automáticamente...');
-      
-      try {
-        const processingResult = await pdfProcessor.processPDF(buffer, originalname);
-        finalBuffer = processingResult.buffer;
-        wasProcessed = true;
-        processingReport = pdfProcessor.generateProcessingReport(processingResult);
-        console.log('✅ PDF procesado exitosamente');
-      } catch (error) {
-        console.error('❌ Error procesando PDF:', error);
-        return res.status(400).json({
-          error: 'PDF no cumple especificaciones y no pudo ser procesado',
-          originalIssues: initialValidation.errors,
-          processingError: error.message
-        });
-      }
-    }
-
-    // 3️⃣ VALIDACIÓN FINAL (del PDF original o procesado)
-    const validationResult = await pdfValidator.validatePDF(finalBuffer, originalname)
+    // 1️⃣ VALIDACIÓN COMPLETA DEL PDF (usando funciones de Joel adaptadas)
+    const validationResult = await pdfValidator.validatePDF(buffer, originalname)
     
     console.log('� Resultado de validación:')
     console.log(pdfValidator.generateDetailedReport(validationResult))
 
-    // Si aún no pasa validación final, rechazar
+    // Si no pasa validación, rechazar inmediatamente
     if (!validationResult.valid) {
       return res.status(400).json({
         error: 'PDF no cumple con las especificaciones requeridas',
-        wasProcessed: wasProcessed,
         details: {
           summary: validationResult.summary,
           errors: validationResult.errors,
@@ -265,23 +225,22 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
       })
     }
 
-    // 4️⃣ SUBIR A CLOUDFLARE R2 (PDF final)
-    const fileName = wasProcessed ? `processed_${originalname}` : originalname;
-    console.log(`🌩️ Subiendo a Cloudflare R2: ${fileName}`)
-    const uploadResult = await r2Service.uploadFile(finalBuffer, fileName, mimetype)
+    // 2️⃣ SUBIR A CLOUDFLARE R2 (solo si pasa validación)
+    console.log('✅ PDF válido. Subiendo a Cloudflare R2:', originalname)
+    const uploadResult = await r2Service.uploadFile(buffer, originalname, mimetype)
 
-    // 5️⃣ GUARDAR EN BASE DE DATOS
+    // 3️⃣ GUARDAR EN BASE DE DATOS
     const document = await prisma.document.create({
       data: {
-        name: fileName,
+        name: originalname,
         originalName: originalname,
-        size: finalBuffer.length, // Tamaño del archivo final
-        status: 'processed',
+        size: size,
+        status: 'processed', // Solo llega aquí si está validado
         userId: userId,
         company: 'Empresa Demo',
         uploadDate: new Date(),
-        processedAt: new Date(),
-        filePath: uploadResult.key
+        processedAt: new Date(), // PDF validado = procesado inmediatamente
+        filePath: uploadResult.key // Key de R2
       }
     })
 
@@ -289,23 +248,15 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
 
     res.status(201).json({
       success: true,
-      message: wasProcessed ? '🔄 PDF procesado y almacenado exitosamente' : '✅ PDF validado y almacenado exitosamente',
+      message: '✅ PDF validado y almacenado exitosamente',
       document: {
         id: document.id,
         name: document.name,
-        originalName: document.originalName,
         status: document.status,
         size: document.size,
         uploadDate: document.uploadDate,
         company: document.company,
         fileUrl: `/api/documents/${document.id}/view`
-      },
-      processing: {
-        wasProcessed: wasProcessed,
-        originalSize: size,
-        finalSize: finalBuffer.length,
-        compressionRatio: wasProcessed ? ((1 - finalBuffer.length / size) * 100).toFixed(1) + '%' : '0%',
-        report: processingReport
       },
       validation: {
         summary: validationResult.summary,
