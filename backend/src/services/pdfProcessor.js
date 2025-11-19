@@ -79,68 +79,26 @@ export class PDFProcessor {
     const optimizations = [];
 
     try {
-      // 1️⃣ CONVERSIÓN AGRESIVA A ESCALA DE GRISES + 300 DPI usando Ghostscript
-      console.log('🔄 Convirtiendo a escala de grises 300 DPI...');
+      // 1️⃣ CONVERSIÓN SIMPLE A ESCALA DE GRISES (PASO A PASO)
+      console.log('🎯 Convirtiendo a escala de grises (paso básico)...');
       
       const gsCommand = [
         'gs',
         '-sDEVICE=pdfwrite',
-        // === FORZAR CONVERSIÓN COMPLETA A ESCALA DE GRISES ===
-        '-sProcessColorModel=DeviceGray',
-        '-sColorConversionStrategy=Gray',
-        '-dProcessColorModel=/DeviceGray',
-        '-dOverrideICC=true',
-        '-dRenderIntent=1',
-        // === FORZAR CONVERSIÓN DE TODAS LAS IMÁGENES ===
-        '-dConvertCMYKImagesToRGB=false',
-        '-dConvertImagesToIndexed=false',
-        '-dPassThroughJPEGImages=false', // NO mantener JPEGs originales
-        '-dPassThroughJPXImages=false',  // NO mantener JPX originales
-        // === PARÁMETROS BÁSICOS ===
-        '-dCompatibilityLevel=1.4',
         '-dNOPAUSE',
         '-dQUIET',
         '-dBATCH',
-        '-r300',
-        // === CONFIGURACIÓN AGRESIVA: FORZAR 300 DPI EN TODAS LAS IMÁGENES ===
-        '-dDownsampleColorImages=true',
-        '-dDownsampleGrayImages=true',
-        '-dDownsampleMonoImages=true',
-        // Resoluciones exactas
-        '-dColorImageResolution=300',
-        '-dGrayImageResolution=300',
-        '-dMonoImageResolution=300',
-        // Tipos de downsampling
-        '-dColorImageDownsampleType=/Bicubic',
-        '-dGrayImageDownsampleType=/Bicubic',
-        '-dMonoImageDownsampleType=/Bicubic',
-        // === FORZAR RESAMPLING: Threshold en 1.0 = TODAS las imágenes ===
-        '-dColorImageDownsampleThreshold=1.0',
-        '-dGrayImageDownsampleThreshold=1.0',
-        '-dMonoImageDownsampleThreshold=1.0',
-        // === FILTROS FORZADOS PARA CONVERSIÓN COMPLETA ===
-        '-dAutoFilterColorImages=false',
-        '-dAutoFilterGrayImages=false',
-        '-dEncodeColorImages=true',
-        '-dEncodeGrayImages=true',
-        '-dColorImageFilter=/DCTEncode',
-        '-dGrayImageFilter=/DCTEncode',
-        // === OPTIMIZACIONES ADICIONALES ===
-        '-dDetectDuplicateImages=true',
-        '-dCompressFonts=true',
-        '-dSubsetFonts=true',
-        '-dEmbedAllFonts=true',
-        '-dAutoRotatePages=/None',
-        '-dUseFlateCompression=true',
-        // === NO USAR PDFSETTINGS para control total ===
+        '-sColorConversionStrategy=Gray',     // Convertir a escala de grises
+        '-dProcessColorModel=/DeviceGray',    // Forzar modelo de color gris
+        '-dCompatibilityLevel=1.4',           // PDF estándar
         `-sOutputFile=${outputPath}`,
         inputPath
       ].join(' ');
 
       await execAsync(gsCommand);
-      optimizations.push('🎯 Conversión forzada: DeviceGray + 300 DPI + PassThrough=false');
-      optimizations.push('🔧 Resampling: Threshold=1.0 (todas las imágenes procesadas)');
-      optimizations.push('⚙️ Filtros manuales: DCTEncode para control total');
+      optimizations.push('✅ Conversión básica a escala de grises aplicada');
+
+      console.log('✅ Conversión a escala de grises completada - paso básico exitoso');
 
       // 2️⃣ VERIFICAR QUE EL ARCHIVO SE GENERÓ CORRECTAMENTE
       const stats = await fs.stat(outputPath);
@@ -148,9 +106,15 @@ export class PDFProcessor {
         throw new Error('El archivo procesado está vacío');
       }
 
-      // 3️⃣ Si aún no cumple especificaciones, aplicar métodos locales robustos
+      /* 
+      TODO: Por ahora solo validamos conversión básica a escala de grises.
+      Después añadiremos validación de 300 DPI y métodos de fallback.
+      
       const quickVerify = await this.quickImageCheck(outputPath);
       if (!quickVerify.success) {
+        // Métodos adicionales se implementarán en siguientes pasos
+      }
+      */
         console.log('🔄 Primera pasada insuficiente, aplicando conversiones locales robustas...');
         
         // � ESTRATEGIA LOCAL: Métodos ordenados por efectividad
@@ -1939,6 +1903,52 @@ export class PDFProcessor {
     }
 
     return report;
+  }
+  /**
+   * 🎯 CONVERSIÓN SIMPLE A ESCALA DE GRISES (PASO A PASO)
+   * Método súper simplificado para probar paso a paso
+   */
+  async simpleGrayscaleOnly(inputPath, outputPath) {
+    try {
+      console.log('🎯 === MODO PASO A PASO: Solo escala de grises ===');
+      
+      // Comando Ghostscript súper básico
+      const gsCommand = [
+        'gs',
+        '-sDEVICE=pdfwrite',
+        '-dNOPAUSE',
+        '-dQUIET',
+        '-dBATCH',
+        '-sColorConversionStrategy=Gray',
+        '-dProcessColorModel=/DeviceGray',
+        '-dCompatibilityLevel=1.4',
+        `-sOutputFile=${outputPath}`,
+        inputPath
+      ].join(' ');
+
+      console.log('🔧 Ejecutando conversión básica a escala de grises...');
+      await execAsync(gsCommand);
+      
+      // Verificar que se generó
+      const stats = await fs.stat(outputPath);
+      if (stats.size === 0) {
+        throw new Error('Archivo vacío generado');
+      }
+
+      console.log(`✅ Conversión básica completada. Tamaño: ${(stats.size / 1024).toFixed(2)} KB`);
+      
+      return {
+        success: true,
+        optimizations: ['✅ Conversión básica a escala de grises'],
+        originalSize: (await fs.stat(inputPath)).size,
+        processedSize: stats.size,
+        compressionRatio: `${(((stats.size / (await fs.stat(inputPath)).size) - 1) * 100).toFixed(1)}%`
+      };
+
+    } catch (error) {
+      console.error('❌ Error en conversión simple:', error.message);
+      throw error;
+    }
   }
 }
 
