@@ -11,6 +11,7 @@ import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import { dirname } from 'path'
+import r2Service from './services/cloudflareR2.js'
 
 const app = express()
 
@@ -48,21 +49,12 @@ const corsOptions = {
 
 app.use(cors(corsOptions))
 
-// Configurar multer para manejo de archivos
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, uploadsDir)
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
-    const extension = path.extname(file.originalname)
-    cb(null, `pdf-${uniqueSuffix}${extension}`)
-  }
-})
+// Configurar multer para manejo de archivos (memoria para R2)
+const storage = multer.memoryStorage()
 
 const upload = multer({ 
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB para R2
   fileFilter: (req, file, cb) => {
     if (file.mimetype === 'application/pdf') {
       cb(null, true)
@@ -95,10 +87,14 @@ app.get('/health', async (req, res) => {
     // Verificar conexión a base de datos
     await prisma.$queryRaw`SELECT 1`
     
+    // Verificar configuración de Cloudflare R2
+    const r2Status = r2Service.isConfigured() ? 'configured' : 'not configured'
+    
     res.json({
       status: 'healthy',
       timestamp: new Date().toISOString(),
       database: 'connected',
+      cloudflareR2: r2Status,
       uptime: process.uptime(),
       memory: process.memoryUsage(),
       environment: process.env.NODE_ENV || 'development'
@@ -108,6 +104,7 @@ app.get('/health', async (req, res) => {
       status: 'unhealthy',
       timestamp: new Date().toISOString(),
       database: 'disconnected',
+      cloudflareR2: 'unknown',
       error: error.message,
       environment: process.env.NODE_ENV || 'development'
     })
@@ -145,22 +142,31 @@ const verifyToken = (req, res, next) => {
 // ENDPOINTS DE DOCUMENTOS PDF
 // ===========================================
 
-// POST /documents/upload - Subir y procesar PDF
+// POST /documents/upload - Subir y procesar PDF con Cloudflare R2
 app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No se proporcionó archivo PDF' })
     }
 
-    const { originalname, filename, size, path: filePath } = req.file
+    // Verificar que R2 esté configurado
+    if (!r2Service.isConfigured()) {
+      return res.status(500).json({ 
+        error: 'Servicio de almacenamiento no configurado. Contacta al administrador.' 
+      })
+    }
+
+    const { originalname, buffer, size, mimetype } = req.file
     const userId = req.user.id
 
     // Validaciones
-    if (size > 5 * 1024 * 1024) {
-      // Eliminar archivo si excede el tamaño
-      fs.unlinkSync(filePath)
-      return res.status(400).json({ error: 'El archivo excede el tamaño máximo (5MB)' })
+    if (size > 10 * 1024 * 1024) {
+      return res.status(400).json({ error: 'El archivo excede el tamaño máximo (10MB)' })
     }
+
+    // Subir archivo a Cloudflare R2
+    console.log('🚀 Subiendo archivo a Cloudflare R2:', originalname)
+    const uploadResult = await r2Service.uploadFile(buffer, originalname, mimetype)
 
     // Simular procesamiento con servicio Python (opcional)
     let processedStatus = 'processed'
@@ -181,12 +187,14 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
         company: 'Empresa Demo', // Por ahora valor fijo
         uploadDate: new Date(),
         processedAt: processedStatus === 'processed' ? new Date() : null,
-        filePath: filename // Guardar nombre del archivo generado
+        filePath: uploadResult.key // Guardar key de R2
       }
     })
 
+    console.log('✅ Documento guardado en BD:', document.id)
+
     res.status(201).json({
-      message: 'Documento procesado exitosamente',
+      message: 'Documento procesado y almacenado exitosamente en Cloudflare R2',
       document: {
         id: document.id,
         name: document.name,
@@ -194,13 +202,17 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
         size: document.size,
         uploadDate: document.uploadDate,
         company: document.company,
-        fileUrl: `/api/documents/${document.id}/view`
+        fileUrl: `/api/documents/${document.id}/view`,
+        cloudflare: {
+          stored: true,
+          key: uploadResult.key
+        }
       }
     })
 
   } catch (error) {
     console.error('Error procesando documento:', error)
-    res.status(500).json({ error: 'Error al procesar documento' })
+    res.status(500).json({ error: 'Error al procesar documento: ' + error.message })
   }
 })
 
@@ -343,7 +355,7 @@ app.get('/documents/stats', verifyToken, async (req, res) => {
   }
 })
 
-// GET /api/documents/:id/view - Visualizar PDF
+// GET /api/documents/:id/view - Visualizar PDF desde Cloudflare R2
 app.get('/api/documents/:id/view', verifyToken, async (req, res) => {
   try {
     const documentId = parseInt(req.params.id)
@@ -362,29 +374,34 @@ app.get('/api/documents/:id/view', verifyToken, async (req, res) => {
     }
 
     if (!document.filePath) {
-      return res.status(404).json({ error: 'Archivo no encontrado en el servidor' })
+      return res.status(404).json({ error: 'Archivo no encontrado en el almacenamiento' })
     }
 
-    const filePath = path.join(uploadsDir, document.filePath)
-    
-    // Verificar que el archivo existe
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Archivo no encontrado en el sistema' })
+    // Verificar que R2 esté configurado
+    if (!r2Service.isConfigured()) {
+      return res.status(500).json({ 
+        error: 'Servicio de almacenamiento no configurado' 
+      })
     }
 
-    // Configurar headers para PDF
-    res.setHeader('Content-Type', 'application/pdf')
-    res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`)
-    
-    // Enviar archivo
-    res.sendFile(filePath)
+    try {
+      // Generar URL firmada para visualización (válida por 1 hora)
+      const signedUrl = await r2Service.getSignedViewUrl(document.filePath, 3600)
+      
+      // Redirigir a la URL firmada de Cloudflare R2
+      res.redirect(signedUrl)
+    } catch (r2Error) {
+      console.error('Error obteniendo URL de R2:', r2Error)
+      res.status(500).json({ error: 'Error al acceder al archivo en Cloudflare R2' })
+    }
+
   } catch (error) {
     console.error('Error sirviendo PDF:', error)
     res.status(500).json({ error: 'Error al mostrar documento' })
   }
 })
 
-// GET /api/documents/:id/download - Descargar PDF
+// GET /api/documents/:id/download - Descargar PDF desde Cloudflare R2
 app.get('/api/documents/:id/download', verifyToken, async (req, res) => {
   try {
     const documentId = parseInt(req.params.id)
@@ -403,22 +420,31 @@ app.get('/api/documents/:id/download', verifyToken, async (req, res) => {
     }
 
     if (!document.filePath) {
-      return res.status(404).json({ error: 'Archivo no encontrado en el servidor' })
+      return res.status(404).json({ error: 'Archivo no encontrado en el almacenamiento' })
     }
 
-    const filePath = path.join(uploadsDir, document.filePath)
-    
-    // Verificar que el archivo existe
-    if (!fs.existsSync(filePath)) {
-      return res.status(404).json({ error: 'Archivo no encontrado en el sistema' })
+    // Verificar que R2 esté configurado
+    if (!r2Service.isConfigured()) {
+      return res.status(500).json({ 
+        error: 'Servicio de almacenamiento no configurado' 
+      })
     }
 
-    // Configurar headers para descarga
-    res.setHeader('Content-Type', 'application/pdf')
-    res.setHeader('Content-Disposition', `attachment; filename="${document.originalName}"`)
-    
-    // Enviar archivo
-    res.sendFile(filePath)
+    try {
+      // Generar URL firmada para descarga (válida por 1 hora)
+      const downloadUrl = await r2Service.getSignedDownloadUrl(
+        document.filePath, 
+        document.originalName, 
+        3600
+      )
+      
+      // Redirigir a la URL de descarga de Cloudflare R2
+      res.redirect(downloadUrl)
+    } catch (r2Error) {
+      console.error('Error generando URL de descarga R2:', r2Error)
+      res.status(500).json({ error: 'Error al generar enlace de descarga' })
+    }
+
   } catch (error) {
     console.error('Error descargando PDF:', error)
     res.status(500).json({ error: 'Error al descargar documento' })
