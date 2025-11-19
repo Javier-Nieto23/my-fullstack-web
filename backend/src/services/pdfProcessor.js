@@ -159,8 +159,19 @@ export class PDFProcessor {
         const secondVerify = await this.quickImageCheck(outputPath);
         if (!secondVerify.success) {
           console.log('🔥 Aplicando rasterización completa como último recurso...');
-          await this.fullRasterization(outputPath);
-          optimizations.push('Rasterización completa aplicada');
+          try {
+            await this.fullRasterization(outputPath);
+            optimizations.push('Rasterización completa aplicada');
+          } catch (rasterError) {
+            console.warn('⚠️ Rasterización completa falló, aplicando conversión simple...');
+            try {
+              await this.simpleGrayscaleConversion(outputPath);
+              optimizations.push('Conversión simple aplicada como fallback');
+            } catch (simpleError) {
+              console.warn('⚠️ Conversión simple también falló, continuando con mejor resultado disponible');
+              optimizations.push('Múltiples conversiones fallaron - usando mejor resultado disponible');
+            }
+          }
         }
       }
 
@@ -177,6 +188,19 @@ export class PDFProcessor {
 
     } catch (error) {
       console.error('❌ Error en optimización:', error);
+      
+      // Verificar si al menos se generó un archivo de salida
+      try {
+        const stats = await fs.stat(outputPath);
+        if (stats.size > 0) {
+          console.warn('⚠️ Error durante optimización pero archivo generado, continuando...');
+          return { 
+            success: true, 
+            optimizations: [...optimizations, `⚠️ Optimización parcial: ${error.message}`] 
+          };
+        }
+      } catch {}
+      
       throw new Error(`Fallo en optimización Ghostscript: ${error.message}`);
     }
   }
@@ -280,7 +304,54 @@ export class PDFProcessor {
   }
 
   /**
-   * 🔥🔥 RASTERIZACIÓN COMPLETA - ÚLTIMO RECURSO
+   * � CONVERSIÓN SIMPLE DE ESCALA DE GRISES
+   * Método más básico para PDFs problemáticos con la rasterización
+   */
+  async simpleGrayscaleConversion(filePath) {
+    const tempFile = filePath + '.simple';
+    
+    try {
+      // Conversión básica sin rasterización
+      const simpleCommand = [
+        'gs',
+        '-sDEVICE=pdfwrite',
+        '-sColorConversionStrategy=Gray',
+        '-dProcessColorModel=/DeviceGray',
+        '-dCompatibilityLevel=1.4',
+        '-dNOPAUSE',
+        '-dQUIET',
+        '-dBATCH',
+        '-r300',
+        // Configuración muy básica
+        '-dDownsampleColorImages=true',
+        '-dDownsampleGrayImages=true',
+        '-dColorImageResolution=300',
+        '-dGrayImageResolution=300',
+        '-dColorImageDownsampleType=/Average',
+        '-dGrayImageDownsampleType=/Average',
+        '-dColorImageDownsampleThreshold=1.1',
+        '-dGrayImageDownsampleThreshold=1.1',
+        `-sOutputFile=${tempFile}`,
+        filePath
+      ].join(' ');
+
+      await execAsync(simpleCommand);
+      
+      // Reemplazar archivo original
+      await fs.rename(tempFile, filePath);
+      console.log('✅ Conversión simple completada');
+      
+    } catch (error) {
+      // Limpiar archivo temporal si existe
+      try {
+        await fs.unlink(tempFile);
+      } catch {}
+      throw error;
+    }
+  }
+
+  /**
+   * �🔥🔥 RASTERIZACIÓN COMPLETA - ÚLTIMO RECURSO
    * Convierte el PDF completo a imágenes y luego reconstruye
    * Garantiza conversión total a escala de grises 8-bit y 300 DPI
    */
@@ -296,17 +367,14 @@ export class PDFProcessor {
       // 1️⃣ CONVERTIR PDF A IMÁGENES PNG (300 DPI, ESCALA DE GRISES)
       const pdfToPngCommand = [
         'gs',
-        '-sDEVICE=png16m',
+        '-sDEVICE=pnggray', // Usar pnggray para escala de grises directamente
         '-dNOPAUSE',
         '-dQUIET',
         '-dBATCH',
         '-r300', // 300 DPI
-        '-dDownScaleFactor=1',
         '-dTextAlphaBits=4',
         '-dGraphicsAlphaBits=4',
-        // Forzar escala de grises desde la conversión
-        '-sProcessColorModel=DeviceGray',
-        '-dProcessColorModel=/DeviceGray',
+        // NO usar ProcessColorModel con pnggray - causa conflicto
         `-sOutputFile=${pngPattern}`,
         filePath
       ].join(' ');
@@ -327,23 +395,8 @@ export class PDFProcessor {
         if (await this.commandExists('convert')) {
           // Usar ImageMagick si está disponible
           await execAsync(`convert "${imageFile}" -colorspace Gray -depth 8 -density 300 "${imageFile}"`);
-        } else {
-          // Alternativa con Ghostscript
-          const tempGrayFile = imageFile + '.gray';
-          await execAsync([
-            'gs',
-            '-sDEVICE=png16m',
-            '-dNOPAUSE',
-            '-dQUIET',
-            '-dBATCH',
-            '-r300',
-            '-sProcessColorModel=DeviceGray',
-            '-dProcessColorModel=/DeviceGray',
-            `-sOutputFile=${tempGrayFile}`,
-            imageFile
-          ].join(' '));
-          await fs.rename(tempGrayFile, imageFile);
         }
+        // Si no hay ImageMagick, las imágenes ya están en escala de grises por pnggray
       }
 
       // 4️⃣ RECONSTRUIR PDF DESDE LAS IMÁGENES PROCESADAS
