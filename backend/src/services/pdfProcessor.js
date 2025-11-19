@@ -148,57 +148,47 @@ export class PDFProcessor {
         throw new Error('El archivo procesado está vacío');
       }
 
-      // 3️⃣ Si aún no cumple, aplicar segunda pasada más agresiva
+      // 3️⃣ Si aún no cumple especificaciones, aplicar métodos locales robustos
       const quickVerify = await this.quickImageCheck(outputPath);
       if (!quickVerify.success) {
-        console.log('🔄 Primera pasada insuficiente, aplicando conversión extrema...');
-        await this.extremeConversion(outputPath);
-        optimizations.push('Conversión extrema aplicada');
+        console.log('🔄 Primera pasada insuficiente, aplicando conversiones locales robustas...');
         
-        // 🔥 Si TODAVÍA no cumple, usar ConvertAPI (más confiable que PDF-REST)
-        const secondVerify = await this.quickImageCheck(outputPath);
-        if (!secondVerify.success) {
-          console.log('🌐 Aplicando ConvertAPI como método preferido...');
-          
+        // � ESTRATEGIA LOCAL: Métodos ordenados por efectividad
+        const localMethods = [
+          // Métodos más efectivos primero
+          { name: 'Ghostscript Solo', fn: () => this.ghostscriptOnlyConversion(outputPath) },
+          { name: 'ImageMagick Potente', fn: () => this.powerImageMagickConversion(outputPath) },
+          { name: 'Ghostscript + ImageMagick', fn: () => this.ghostscriptImageMagickConversion(outputPath) },
+          { name: 'Página por Página', fn: () => this.pageByPageConversion(outputPath) },
+          { name: 'ImageMagick Directo', fn: () => this.imageMagickConversion(outputPath) },
+          { name: 'Conversión de Emergencia', fn: () => this.emergencyConversion(outputPath) },
+          { name: 'Extracción de Imágenes', fn: () => this.imageExtractionConversion(outputPath) }
+        ];
+        
+        let conversionSuccess = false;
+        for (let i = 0; i < localMethods.length; i++) {
+          const method = localMethods[i];
           try {
-            await this.convertApiConversion(outputPath);
-            optimizations.push('ConvertAPI aplicado exitosamente');
-          } catch (convertApiError) {
-            console.warn('⚠️ ConvertAPI no disponible, usando métodos alternativos locales...');
+            console.log(`🔧 Aplicando método ${i + 1}/${localMethods.length}: ${method.name}...`);
+            await method.fn();
+            optimizations.push(`${method.name} aplicado exitosamente`);
             
-            // Métodos alternativos locales (más confiables para fallback)
-            const alternativeMethods = [
-              () => this.imageMagickConversion(outputPath),
-              () => this.powerImageMagickConversion(outputPath),
-              () => this.ghostscriptImageMagickConversion(outputPath),
-              () => this.imageExtractionConversion(outputPath),
-              () => this.ghostscriptOnlyConversion(outputPath),
-              () => this.pageByPageConversion(outputPath),
-              () => this.emergencyConversion(outputPath),
-              () => this.simpleGrayscaleConversion(outputPath),
-              () => this.mutoolConversion(outputPath), 
-              () => this.popplerBasedConversion(outputPath),
-              () => this.ultraBasicConversion(outputPath)
-            ];
-            
-            let fallbackSuccess = false;
-            for (let i = 0; i < alternativeMethods.length; i++) {
-              const method = alternativeMethods[i];
-              try {
-                console.log(`🔧 Intentando método alternativo ${i + 1}/${alternativeMethods.length}...`);
-                await method();
-                optimizations.push(`Método alternativo ${i + 1} aplicado exitosamente`);
-                fallbackSuccess = true;
-                break;
-              } catch (altError) {
-                console.warn(`⚠️ Método alternativo ${i + 1} falló: ${altError.message}`);
-              }
+            // Verificar si ahora cumple especificaciones
+            const verifyResult = await this.quickImageCheck(outputPath);
+            if (verifyResult.success) {
+              console.log(`✅ Conversión exitosa con método: ${method.name}`);
+              conversionSuccess = true;
+              break;
+            } else {
+              console.log(`⚠️ ${method.name} completado pero aún no cumple especificaciones`);
             }
-            
-            if (!fallbackSuccess) {
-              optimizations.push('Múltiples conversiones fallaron - usando mejor resultado disponible');
-            }
+          } catch (methodError) {
+            console.warn(`⚠️ ${method.name} falló: ${methodError.message}`);
           }
+        }
+        
+        if (!conversionSuccess) {
+          optimizations.push('⚠️ Múltiples conversiones aplicadas - usando mejor resultado disponible');
         }
       }
 
@@ -577,35 +567,6 @@ export class PDFProcessor {
       try {
         await fs.unlink(tempFile);
       } catch {}
-      throw error;
-    }
-  }
-
-  /**
-   * 🌐 CONVERSIÓN CON CONVERTAPI
-   * Usa servicios en la nube ConvertAPI para conversión profesional
-   */
-  async convertApiConversion(filePath) {
-    try {
-      console.log('🌐 Aplicando conversión con ConvertAPI...');
-      
-      // Leer el archivo
-      const fileBuffer = await fs.readFile(filePath);
-      
-      // Usar ConvertAPI para optimización
-      const result = await this.callConvertAPI(fileBuffer);
-      
-      if (result.success && result.buffer) {
-        // Escribir el resultado optimizado
-        await fs.writeFile(filePath, result.buffer);
-        console.log('✅ Conversión ConvertAPI completada');
-        return result;
-      } else {
-        throw new Error('ConvertAPI no pudo procesar el archivo');
-      }
-      
-    } catch (error) {
-      console.warn('⚠️ ConvertAPI conversión falló:', error.message);
       throw error;
     }
   }
