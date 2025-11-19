@@ -79,39 +79,54 @@ export class PDFProcessor {
     const optimizations = [];
 
     try {
-      // 1️⃣ CONVERSIÓN A ESCALA DE GRISES + 300 DPI usando Ghostscript
+      // 1️⃣ CONVERSIÓN AGRESIVA A ESCALA DE GRISES + 300 DPI usando Ghostscript
       console.log('🔄 Convirtiendo a escala de grises 300 DPI...');
       
       const gsCommand = [
         'gs',
         '-sDEVICE=pdfwrite',
-        '-sColorConversionStrategy=Gray',
-        '-dProcessColorModel=/DeviceGray',
+        '-sProcessColorModel=DeviceGray', // Forzar escala de grises
+        '-sColorConversionStrategy=Gray', // Estrategia de conversión
+        '-dProcessColorModel=/DeviceGray', // Modelo de color dispositivo
+        '-dOverrideICC=true', // Sobrescribir perfiles de color
         '-dCompatibilityLevel=1.4',
-        '-dPDFSETTINGS=/printer',
         '-dNOPAUSE',
         '-dQUIET',
         '-dBATCH',
-        '-r300', // 300 DPI
+        '-r300', // 300 DPI fijo
+        // Configuración agresiva de imágenes
         '-dDownsampleColorImages=true',
         '-dDownsampleGrayImages=true',
         '-dDownsampleMonoImages=true',
         '-dColorImageResolution=300',
-        '-dGrayImageResolution=300',
+        '-dGrayImageResolution=300', 
         '-dMonoImageResolution=300',
+        '-dColorImageDownsampleType=/Bicubic',
+        '-dGrayImageDownsampleType=/Bicubic',
+        '-dMonoImageDownsampleType=/Bicubic',
+        // Forzar resampling de todas las imágenes
+        '-dColorImageDownsampleThreshold=1.0',
+        '-dGrayImageDownsampleThreshold=1.0',
+        '-dMonoImageDownsampleThreshold=1.0',
+        // Optimizaciones adicionales
         '-dDetectDuplicateImages=true',
         '-dCompressFonts=true',
         '-dSubsetFonts=true',
         '-dEmbedAllFonts=true',
         '-dAutoRotatePages=/None',
+        '-dPDFSETTINGS=/prepress', // Configuración prepress para máxima calidad
+        // Configuraciones de color específicas
+        '-dConvertCMYKImagesToRGB=false',
+        '-dConvertImagesToIndexed=false',
+        '-dUseFlateCompression=true',
         `-sOutputFile=${outputPath}`,
         inputPath
       ].join(' ');
 
       await execAsync(gsCommand);
-      optimizations.push('Conversión a escala de grises 8-bit');
-      optimizations.push('Resolución normalizada a 300 DPI');
-      optimizations.push('Compresión optimizada');
+      optimizations.push('Conversión forzada a escala de grises DeviceGray');
+      optimizations.push('Resolución normalizada a 300 DPI con resampling');
+      optimizations.push('Compresión optimizada prepress');
 
       // 2️⃣ VERIFICAR QUE EL ARCHIVO SE GENERÓ CORRECTAMENTE
       const stats = await fs.stat(outputPath);
@@ -119,8 +134,17 @@ export class PDFProcessor {
         throw new Error('El archivo procesado está vacío');
       }
 
-      // 3️⃣ OPTIMIZACIÓN ADICIONAL SI EL TAMAÑO ES MAYOR A 3MB
-      if (stats.size > this.maxSizeBytes) {
+      // 3️⃣ Si aún no cumple, aplicar segunda pasada más agresiva
+      const quickVerify = await this.quickImageCheck(outputPath);
+      if (!quickVerify.success) {
+        console.log('🔄 Primera pasada insuficiente, aplicando conversión extrema...');
+        await this.extremeConversion(outputPath);
+        optimizations.push('Conversión extrema aplicada');
+      }
+
+      // 4️⃣ OPTIMIZACIÓN ADICIONAL SI EL TAMAÑO ES MAYOR A 3MB
+      const finalStats = await fs.stat(outputPath);
+      if (finalStats.size > this.maxSizeBytes) {
         console.log('🔄 Archivo mayor a 3MB, aplicando compresión adicional...');
         await this.additionalCompression(outputPath);
         optimizations.push('Compresión adicional aplicada');
@@ -132,6 +156,98 @@ export class PDFProcessor {
     } catch (error) {
       console.error('❌ Error en optimización:', error);
       throw new Error(`Fallo en optimización Ghostscript: ${error.message}`);
+    }
+  }
+
+  /**
+   * ⚡ VERIFICACIÓN RÁPIDA DE IMÁGENES
+   * Chequeo rápido para ver si necesita conversión adicional
+   */
+  async quickImageCheck(filePath) {
+    try {
+      const { stdout: imageList } = await execAsync(`pdfimages -list "${filePath}"`);
+      const imageLines = imageList.split('\n').slice(2).filter(line => /^\s*\d+/.test(line));
+      
+      if (imageLines.length === 0) {
+        return { success: true, reason: 'No hay imágenes' };
+      }
+
+      for (const line of imageLines) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 10) {
+          const color = parts[5].toLowerCase();
+          const bpc = parseInt(parts[6]);
+          const xDpi = parseInt(parts[10]);
+          
+          if (color !== 'gray' || bpc !== 8 || xDpi < 300) {
+            return { success: false, reason: 'Imágenes no cumplen especificaciones' };
+          }
+        }
+      }
+
+      return { success: true, reason: 'Todas las imágenes cumplen' };
+    } catch (error) {
+      return { success: false, reason: 'No se pudo verificar' };
+    }
+  }
+
+  /**
+   * 🔥 CONVERSIÓN EXTREMA
+   * Última opción para forzar especificaciones
+   */
+  async extremeConversion(filePath) {
+    const tempFile = filePath + '.extreme';
+    
+    try {
+      // Conversión extrema: rasterizar todo y reconstruir
+      const extremeCommand = [
+        'gs',
+        '-sDEVICE=pdfwrite',
+        '-sProcessColorModel=DeviceGray',
+        '-dProcessColorModel=/DeviceGray',
+        '-sColorConversionStrategy=Gray',
+        '-dOverrideICC=true',
+        '-dRenderIntent=1',
+        '-dCompatibilityLevel=1.4',
+        '-dNOPAUSE',
+        '-dQUIET',
+        '-dBATCH',
+        '-r300',
+        // Forzar rasterización de imágenes
+        '-dColorImageResolution=300',
+        '-dGrayImageResolution=300',
+        '-dMonoImageResolution=300',
+        '-dDownsampleColorImages=true',
+        '-dDownsampleGrayImages=true', 
+        '-dDownsampleMonoImages=true',
+        '-dColorImageDownsampleType=/Bicubic',
+        '-dGrayImageDownsampleType=/Bicubic',
+        '-dColorImageDownsampleThreshold=1.0',
+        '-dGrayImageDownsampleThreshold=1.0',
+        // Forzar conversión total
+        '-dConvertCMYKImagesToRGB=false',
+        '-dAutoFilterColorImages=false',
+        '-dAutoFilterGrayImages=false',
+        '-dEncodeColorImages=true',
+        '-dEncodeGrayImages=true',
+        '-dColorImageFilter=/DCTEncode',
+        '-dGrayImageFilter=/DCTEncode',
+        `-sOutputFile=${tempFile}`,
+        filePath
+      ].join(' ');
+
+      await execAsync(extremeCommand);
+      
+      // Reemplazar archivo original
+      await fs.rename(tempFile, filePath);
+      console.log('✅ Conversión extrema completada');
+      
+    } catch (error) {
+      // Limpiar archivo temporal si existe
+      try {
+        await fs.unlink(tempFile);
+      } catch {}
+      throw error;
     }
   }
 

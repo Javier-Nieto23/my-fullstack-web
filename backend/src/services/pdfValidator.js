@@ -34,7 +34,9 @@ export class PDFValidator {
       errors: [],
       warnings: [],
       checks: {},
-      summary: ''
+      summary: '',
+      isProcessable: true, // NUEVO: Indica si se puede procesar
+      hasOCR: false // NUEVO: Indica si tiene OCR
     };
 
     try {
@@ -43,6 +45,7 @@ export class PDFValidator {
       results.checks.fileType = typeCheck;
       if (!typeCheck.valid) {
         results.valid = false;
+        results.isProcessable = false;
         results.errors.push(typeCheck.message);
       }
 
@@ -51,12 +54,13 @@ export class PDFValidator {
       results.checks.fileSize = sizeCheck;
       if (!sizeCheck.valid) {
         results.valid = false;
+        // Tamaño grande no impide procesamiento
         results.errors.push(sizeCheck.message);
       }
 
-      // Si falla validación básica, no continuar
-      if (!results.valid) {
-        results.summary = 'PDF rechazado: No cumple validaciones básicas';
+      // Si falla validación básica crítica, no continuar
+      if (!results.isProcessable) {
+        results.summary = 'PDF rechazado: No es un archivo PDF válido';
         return results;
       }
 
@@ -64,30 +68,44 @@ export class PDFValidator {
       const tempFile = await this.createTempFile(fileBuffer);
       
       try {
-        // 3️⃣ Verificar contenido prohibido
+        // 3️⃣ VERIFICAR OCR (CRÍTICO - RECHAZO DEFINITIVO)
+        const ocrCheck = await this.detectOCR(tempFile);
+        results.checks.ocr = ocrCheck;
+        results.hasOCR = ocrCheck.hasOCR;
+        
+        if (ocrCheck.hasOCR) {
+          results.valid = false;
+          results.isProcessable = false; // No se puede procesar si tiene OCR
+          results.errors.push('❌ RECHAZADO: Documento contiene texto OCR escaneado');
+        }
+
+        // 4️⃣ Verificar contenido prohibido
         const contentCheck = await this.validateContent(tempFile);
         results.checks.content = contentCheck;
         if (!contentCheck.valid) {
           results.valid = false;
+          results.isProcessable = false; // Contenido prohibido tampoco se puede procesar
           results.errors.push(...contentCheck.errors);
         }
 
-        // 4️⃣ Verificar páginas en blanco y OCR
+        // 5️⃣ Verificar páginas en blanco y estructura
         const processingCheck = await this.validateProcessing(tempFile);
         results.checks.processing = processingCheck;
         if (!processingCheck.valid) {
           results.valid = false;
+          // Páginas en blanco SÍ se pueden procesar
           results.errors.push(...processingCheck.errors);
         }
         if (processingCheck.warnings.length > 0) {
           results.warnings.push(...processingCheck.warnings);
         }
 
-        // 5️⃣ Verificar imágenes (resolución y escala de grises)
+        // 6️⃣ Verificar imágenes (resolución y escala de grises)
         const imageCheck = await this.validateImages(tempFile);
         results.checks.images = imageCheck;
         if (!imageCheck.valid) {
           results.valid = false;
+          // Imágenes incorrectas SÍ se pueden procesar
           results.errors.push(...imageCheck.errors);
         }
 
@@ -96,19 +114,98 @@ export class PDFValidator {
         await this.cleanupTempFile(tempFile);
       }
 
-      // Generar resumen
-      results.summary = results.valid 
-        ? '✅ PDF válido - Cumple todas las especificaciones'
-        : `❌ PDF rechazado - ${results.errors.length} errores encontrados`;
+      // Generar resumen basado en procesabilidad
+      if (!results.isProcessable) {
+        results.summary = results.hasOCR 
+          ? '🚫 PDF RECHAZADO DEFINITIVAMENTE - Contiene OCR escaneado'
+          : `🚫 PDF RECHAZADO DEFINITIVAMENTE - ${results.errors.length} errores críticos`;
+      } else if (!results.valid) {
+        results.summary = `🔄 PDF PROCESABLE - ${results.errors.length} errores que se pueden corregir automáticamente`;
+      } else {
+        results.summary = '✅ PDF válido - Cumple todas las especificaciones';
+      }
 
     } catch (error) {
       console.error('Error en validación PDF:', error);
       results.valid = false;
+      results.isProcessable = false;
       results.errors.push(`Error interno de validación: ${error.message}`);
       results.summary = '❌ Error durante validación';
     }
 
     return results;
+  }
+
+  /**
+   * 🔍 DETECTAR OCR EN PDF
+   * Verifica si el PDF contiene texto escaneado con OCR
+   */
+  async detectOCR(tempFilePath) {
+    const result = {
+      hasOCR: false,
+      confidence: 0,
+      details: [],
+      method: 'text-analysis'
+    };
+
+    try {
+      // Extraer texto del PDF
+      const { stdout: textContent } = await execAsync(`pdftotext -layout -nopgbrk "${tempFilePath}" -`);
+      
+      if (textContent.trim().length === 0) {
+        result.hasOCR = true;
+        result.confidence = 90;
+        result.details.push('PDF sin texto extraíble - posible escaneo');
+        return result;
+      }
+
+      // Patrones indicativos de OCR
+      const ocrPatterns = [
+        /[Il1|]{3,}/g, // Secuencias de caracteres confundibles por OCR
+        /[0O]{3,}/g,   // Ceros y O's mezclados
+        /\s[a-z]\s[a-z]\s/g, // Letras sueltas espaciadas (OCR mal)
+        /[^\w\s\.\,\;\:\!\?\-\(\)]{2,}/g, // Caracteres raros
+        /\b\w{1}\s+\w{1}\s+\w{1}\b/g // Palabras fragmentadas
+      ];
+
+      let ocrScore = 0;
+      const textSample = textContent.substring(0, 2000); // Muestra de 2KB
+
+      for (const pattern of ocrPatterns) {
+        const matches = textSample.match(pattern);
+        if (matches) {
+          ocrScore += matches.length;
+          result.details.push(`Patrón OCR detectado: ${pattern.source} (${matches.length} coincidencias)`);
+        }
+      }
+
+      // Calcular confianza basada en la proporción de errores
+      const textLength = textSample.length;
+      const errorRatio = textLength > 0 ? (ocrScore / textLength) * 100 : 0;
+      
+      if (errorRatio > 2) { // Más del 2% de caracteres sospechosos
+        result.hasOCR = true;
+        result.confidence = Math.min(90, errorRatio * 20);
+        result.details.push(`Ratio de errores OCR: ${errorRatio.toFixed(2)}%`);
+      }
+
+      // Verificación adicional: buscar metadatos de escaneo
+      try {
+        const { stdout: metadata } = await execAsync(`pdfinfo "${tempFilePath}"`);
+        if (metadata.includes('scan') || metadata.includes('OCR') || metadata.includes('Adobe Acrobat Image')) {
+          result.hasOCR = true;
+          result.confidence = Math.max(result.confidence, 80);
+          result.details.push('Metadatos indican documento escaneado');
+        }
+      } catch {
+        // Ignorar errores de metadatos
+      }
+
+    } catch (error) {
+      result.details.push(`Error detectando OCR: ${error.message}`);
+    }
+
+    return result;
   }
 
   /**

@@ -218,16 +218,36 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
 
     console.log('🔍 Iniciando validación y procesamiento PDF:', originalname)
 
-    // 1️⃣ VALIDACIÓN INICIAL DEL PDF
+    // 1️⃣ VALIDACIÓN CON DETECCIÓN DE OCR
     const initialValidation = await pdfValidator.validatePDF(buffer, originalname)
+    
+    console.log('📋 Resultado validación:')
+    console.log(pdfValidator.generateDetailedReport(initialValidation))
+
+    // 2️⃣ VERIFICAR SI ES PROCESABLE (rechazar definitivamente si tiene OCR)
+    if (!initialValidation.isProcessable) {
+      return res.status(400).json({
+        error: initialValidation.hasOCR 
+          ? 'PDF RECHAZADO: Contiene texto OCR escaneado (no procesable)'
+          : 'PDF RECHAZADO: Contiene elementos prohibidos (no procesable)',
+        definitive: true, // Rechazo definitivo
+        details: {
+          summary: initialValidation.summary,
+          errors: initialValidation.errors,
+          warnings: initialValidation.warnings,
+          checks: initialValidation.checks,
+          hasOCR: initialValidation.hasOCR
+        }
+      })
+    }
     
     let finalBuffer = buffer;
     let wasProcessed = false;
     let processingReport = '';
 
-    // 2️⃣ Si no cumple especificaciones, procesarlo automáticamente
-    if (!initialValidation.valid) {
-      console.log('🔄 PDF no cumple especificaciones. Procesando automáticamente...');
+    // 3️⃣ PROCESAMIENTO AUTOMÁTICO (solo si no cumple pero ES procesable)
+    if (!initialValidation.valid && initialValidation.isProcessable) {
+      console.log('🔄 PDF procesable pero no cumple especificaciones. Iniciando conversión automática...');
       
       try {
         const processingResult = await pdfProcessor.processPDF(buffer, originalname);
@@ -243,6 +263,8 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
           processingError: error.message
         });
       }
+    } else if (initialValidation.valid) {
+      console.log('✅ PDF cumple especificaciones originalmente');
     }
 
     // 3️⃣ VALIDACIÓN FINAL (del PDF original o procesado)
