@@ -243,7 +243,7 @@ const Registro = () => {
                 maxLength="12"
               />
               <small className="form-text text-muted">
-                4 letras + 8 números (ej: XAXX010101000)
+                
                 {formData.rfc && (
                   <span className={`ms-2 badge ${formData.rfc.length === 12 ? 'bg-success' : 'bg-secondary'}`}>
                     {formData.rfc.length}/12
