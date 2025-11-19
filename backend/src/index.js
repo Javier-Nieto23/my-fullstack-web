@@ -44,6 +44,55 @@ const upload = multer({
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production'
 const SALT_ROUNDS = 10
 
+// ===========================================
+// HEALTH CHECK Y DEBUG ENDPOINTS
+// ===========================================
+
+// GET / - Health check básico
+app.get('/', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'PDF Converter Backend is running',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  })
+})
+
+// GET /health - Health check detallado
+app.get('/health', async (req, res) => {
+  try {
+    // Verificar conexión a base de datos
+    await prisma.$queryRaw`SELECT 1`
+    
+    res.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      database: 'connected',
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      environment: process.env.NODE_ENV || 'development'
+    })
+  } catch (error) {
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      database: 'disconnected',
+      error: error.message,
+      environment: process.env.NODE_ENV || 'development'
+    })
+  }
+})
+
+// GET /api/test - Endpoint de prueba para verificar CORS
+app.get('/api/test', (req, res) => {
+  res.json({
+    message: 'API funcionando correctamente',
+    timestamp: new Date().toISOString(),
+    origin: req.headers.origin || 'unknown',
+    userAgent: req.headers['user-agent'] || 'unknown'
+  })
+})
+
 // Middleware para verificar token
 const verifyToken = (req, res, next) => {
   const token = req.headers.authorization?.split(' ')[1]
@@ -444,15 +493,70 @@ app.get('/debug/database', async (req, res) => {
 
 const PORT = process.env.PORT || 3000
 
+// Middleware global de manejo de errores
+app.use((error, req, res, next) => {
+  console.error('Error global:', error)
+  
+  if (error.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ error: 'El archivo excede el tamaño máximo permitido (5MB)' })
+  }
+  
+  if (error.message === 'Solo se permiten archivos PDF') {
+    return res.status(400).json({ error: 'Solo se permiten archivos PDF' })
+  }
+  
+  res.status(500).json({ 
+    error: 'Error interno del servidor',
+    timestamp: new Date().toISOString(),
+    requestId: req.headers['x-request-id'] || 'unknown'
+  })
+})
+
+// Middleware para manejar rutas no encontradas
+app.use('*', (req, res) => {
+  res.status(404).json({
+    error: 'Endpoint no encontrado',
+    method: req.method,
+    path: req.originalUrl,
+    timestamp: new Date().toISOString()
+  })
+})
+
 // Graceful shutdown
 process.on('SIGINT', async () => {
+  console.log('Cerrando servidor gracefully...')
+  await prisma.$disconnect()
+  process.exit(0)
+})
+
+process.on('SIGTERM', async () => {
+  console.log('Recibido SIGTERM, cerrando servidor...')
   await prisma.$disconnect()
   process.exit(0)
 })
 
 // Start server with 0.0.0.0 para que Railway pueda acceder
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor backend escuchando en puerto ${PORT}`)
-  console.log(`Base de datos conectada`)
-  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`)
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Servidor backend escuchando en puerto ${PORT}`)
+  console.log(`🗄️ Base de datos configurada`)
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`)
+  console.log(`🔗 CORS configurado para: ${corsOptions.origin}`)
+  console.log(`⏰ Servidor iniciado: ${new Date().toISOString()}`)
+})
+
+server.on('error', (error) => {
+  console.error('Error del servidor:', error)
+  if (error.code === 'EADDRINUSE') {
+    console.error(`Puerto ${PORT} ya está en uso`)
+  }
+})
+
+// Manejo de errores no capturados
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection en:', promise, 'razón:', reason)
+})
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error)
+  process.exit(1)
 })

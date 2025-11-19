@@ -35,23 +35,48 @@ const Verificacion = () => {
     // Validate token with backend /auth/me
     ;(async () => {
       try {
+        console.log('Validando token con:', `${API_URL}/auth/me`)
+        
         const res = await fetch(`${API_URL}/auth/me`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          signal: AbortSignal.timeout(10000) // 10 segundos timeout
         })
+        
         if (!res.ok) {
           // Invalid token
+          console.log('Token inválido, status:', res.status)
           localStorage.removeItem('token')
           localStorage.removeItem('user')
           navigate('/', { replace: true })
           return
         }
-        // OK
-        loadDocuments() // Cargar documentos después de validar
+        
+        console.log('Token válido, cargando documentos...')
+        // OK - cargar documentos después de validar
+        await loadDocuments()
+        
       } catch (err) {
         // network error -> treat as not authorized
-        localStorage.removeItem('token')
-        localStorage.removeItem('user')
-        navigate('/', { replace: true })
+        console.error('Error de conexión:', err)
+        
+        if (err.name === 'AbortError' || err.name === 'TimeoutError') {
+          Swal.fire({
+            title: 'Error de conexión',
+            text: 'No se pudo conectar al servidor. Por favor, verifica tu conexión a internet.',
+            icon: 'error',
+            confirmButtonText: 'Reintentar',
+            allowOutsideClick: false
+          }).then(() => {
+            window.location.reload()
+          })
+        } else {
+          localStorage.removeItem('token')
+          localStorage.removeItem('user')
+          navigate('/', { replace: true })
+        }
         return
       } finally {
         setChecking(false)
@@ -63,13 +88,32 @@ const Verificacion = () => {
   const loadDocuments = async () => {
     try {
       const token = localStorage.getItem('token')
+      console.log('Cargando documentos desde:', `${API_URL}/documents`)
+      
       const response = await axios.get(`${API_URL}/documents`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 10000 // 10 segundos timeout
       })
+      
+      console.log('Documentos cargados:', response.data)
       setDocuments(response.data)
       updateMetrics(response.data)
     } catch (error) {
       console.error('Error loading documents:', error)
+      
+      if (error.code === 'ECONNABORTED') {
+        Swal.fire('Error', 'Timeout de conexión. El servidor tardó demasiado en responder.', 'error')
+      } else if (error.response?.status === 401) {
+        Swal.fire('Sesión expirada', 'Por favor, inicia sesión nuevamente', 'warning')
+        handleLogout()
+      } else if (!error.response) {
+        Swal.fire('Error de conexión', `No se pudo conectar al servidor. Verifica tu conexión a internet.\n\nAPI URL: ${API_URL}`, 'error')
+      } else {
+        Swal.fire('Error', `Error del servidor: ${error.response?.data?.error || error.message}`, 'error')
+      }
     }
   }
 
@@ -167,30 +211,33 @@ const Verificacion = () => {
         }, 200)
 
         try {
+          console.log('Subiendo archivo a:', `${API_URL}/documents/upload`)
+          
           const response = await axios.post(`${API_URL}/documents/upload`, formData, {
             headers: {
               Authorization: `Bearer ${token}`,
               'Content-Type': 'multipart/form-data'
+            },
+            timeout: 30000, // 30 segundos para upload
+            onUploadProgress: (progressEvent) => {
+              const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total)
+              setProcessing(prev => 
+                prev.map(p => p.id === tempId ? { ...p, progress: percentCompleted } : p)
+              )
             }
           })
 
           clearInterval(progressInterval)
+          console.log('Archivo subido exitosamente:', response.data)
+
           setProcessing(prev => 
             prev.map(p => p.id === tempId ? { ...p, progress: 100 } : p)
           )
 
-          // Simular documento procesado (ya que no tienes backend completo)
-          const newDoc = {
-            id: Date.now() + Math.random(),
-            name: file.name,
-            status: Math.random() > 0.7 ? 'non_compliant' : 'processed',
-            company: 'Empresa Demo',
-            uploadDate: new Date().toISOString(),
-            size: file.size
-          }
-          
-          setDocuments(prev => [...prev, newDoc])
-          updateMetrics([...documents, newDoc])
+          // Agregar documento a la lista
+          const newDoc = response.data.document
+          setDocuments(prev => [newDoc, ...prev])
+          updateMetrics([newDoc, ...documents])
 
           setTimeout(() => {
             setProcessing(prev => prev.filter(p => p.id !== tempId))
@@ -200,20 +247,39 @@ const Verificacion = () => {
           clearInterval(progressInterval)
           setProcessing(prev => prev.filter(p => p.id !== tempId))
           console.error('Upload error:', error)
-          Swal.fire('Error', 'Error al procesar el archivo', 'error')
+          
+          let errorMessage = 'Error al procesar el archivo'
+          
+          if (error.code === 'ECONNABORTED') {
+            errorMessage = 'Timeout de conexión. El archivo tardó demasiado en subirse.'
+          } else if (error.response?.status === 401) {
+            errorMessage = 'Sesión expirada. Por favor, inicia sesión nuevamente.'
+            handleLogout()
+            return
+          } else if (error.response?.status === 413) {
+            errorMessage = 'El archivo es demasiado grande. Máximo permitido: 5MB.'
+          } else if (!error.response) {
+            errorMessage = `Error de conexión: ${error.message}. API URL: ${API_URL}`
+          } else {
+            errorMessage = error.response?.data?.error || error.message
+          }
+          
+          Swal.fire('Error', errorMessage, 'error')
         }
       }
 
-      Swal.fire({
-        title: '¡Completado!',
-        text: 'Archivos procesados exitosamente',
-        icon: 'success',
-        timer: 2000
-      })
+      if (processingIds.length > 0) {
+        Swal.fire({
+          title: '¡Completado!',
+          text: 'Archivos procesados exitosamente',
+          icon: 'success',
+          timer: 2000
+        })
+      }
 
     } catch (error) {
       console.error('Error uploading files:', error)
-      Swal.fire('Error', 'Error al subir archivos', 'error')
+      Swal.fire('Error', 'Error inesperado al subir archivos', 'error')
     } finally {
       setUploading(false)
       setSelectedFiles([])
