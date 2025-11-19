@@ -85,48 +85,62 @@ export class PDFProcessor {
       const gsCommand = [
         'gs',
         '-sDEVICE=pdfwrite',
-        '-sProcessColorModel=DeviceGray', // Forzar escala de grises
-        '-sColorConversionStrategy=Gray', // Estrategia de conversión
-        '-dProcessColorModel=/DeviceGray', // Modelo de color dispositivo
-        '-dOverrideICC=true', // Sobrescribir perfiles de color
+        // === FORZAR CONVERSIÓN COMPLETA A ESCALA DE GRISES ===
+        '-sProcessColorModel=DeviceGray',
+        '-sColorConversionStrategy=Gray',
+        '-dProcessColorModel=/DeviceGray',
+        '-dOverrideICC=true',
+        '-dRenderIntent=1',
+        // === FORZAR CONVERSIÓN DE TODAS LAS IMÁGENES ===
+        '-dConvertCMYKImagesToRGB=false',
+        '-dConvertImagesToIndexed=false',
+        '-dPassThroughJPEGImages=false', // NO mantener JPEGs originales
+        '-dPassThroughJPXImages=false',  // NO mantener JPX originales
+        // === PARÁMETROS BÁSICOS ===
         '-dCompatibilityLevel=1.4',
         '-dNOPAUSE',
         '-dQUIET',
         '-dBATCH',
-        '-r300', // 300 DPI fijo
-        // Configuración agresiva de imágenes
+        '-r300',
+        // === CONFIGURACIÓN AGRESIVA: FORZAR 300 DPI EN TODAS LAS IMÁGENES ===
         '-dDownsampleColorImages=true',
         '-dDownsampleGrayImages=true',
         '-dDownsampleMonoImages=true',
+        // Resoluciones exactas
         '-dColorImageResolution=300',
-        '-dGrayImageResolution=300', 
+        '-dGrayImageResolution=300',
         '-dMonoImageResolution=300',
+        // Tipos de downsampling
         '-dColorImageDownsampleType=/Bicubic',
         '-dGrayImageDownsampleType=/Bicubic',
         '-dMonoImageDownsampleType=/Bicubic',
-        // Forzar resampling de todas las imágenes
+        // === FORZAR RESAMPLING: Threshold en 1.0 = TODAS las imágenes ===
         '-dColorImageDownsampleThreshold=1.0',
         '-dGrayImageDownsampleThreshold=1.0',
         '-dMonoImageDownsampleThreshold=1.0',
-        // Optimizaciones adicionales
+        // === FILTROS FORZADOS PARA CONVERSIÓN COMPLETA ===
+        '-dAutoFilterColorImages=false',
+        '-dAutoFilterGrayImages=false',
+        '-dEncodeColorImages=true',
+        '-dEncodeGrayImages=true',
+        '-dColorImageFilter=/DCTEncode',
+        '-dGrayImageFilter=/DCTEncode',
+        // === OPTIMIZACIONES ADICIONALES ===
         '-dDetectDuplicateImages=true',
         '-dCompressFonts=true',
         '-dSubsetFonts=true',
         '-dEmbedAllFonts=true',
         '-dAutoRotatePages=/None',
-        '-dPDFSETTINGS=/prepress', // Configuración prepress para máxima calidad
-        // Configuraciones de color específicas
-        '-dConvertCMYKImagesToRGB=false',
-        '-dConvertImagesToIndexed=false',
         '-dUseFlateCompression=true',
+        // === NO USAR PDFSETTINGS para control total ===
         `-sOutputFile=${outputPath}`,
         inputPath
       ].join(' ');
 
       await execAsync(gsCommand);
-      optimizations.push('Conversión forzada a escala de grises DeviceGray');
-      optimizations.push('Resolución normalizada a 300 DPI con resampling');
-      optimizations.push('Compresión optimizada prepress');
+      optimizations.push('🎯 Conversión forzada: DeviceGray + 300 DPI + PassThrough=false');
+      optimizations.push('🔧 Resampling: Threshold=1.0 (todas las imágenes procesadas)');
+      optimizations.push('⚙️ Filtros manuales: DCTEncode para control total');
 
       // 2️⃣ VERIFICAR QUE EL ARCHIVO SE GENERÓ CORRECTAMENTE
       const stats = await fs.stat(outputPath);
@@ -140,6 +154,14 @@ export class PDFProcessor {
         console.log('🔄 Primera pasada insuficiente, aplicando conversión extrema...');
         await this.extremeConversion(outputPath);
         optimizations.push('Conversión extrema aplicada');
+        
+        // 🔥 Si TODAVÍA no cumple, aplicar rasterización completa
+        const secondVerify = await this.quickImageCheck(outputPath);
+        if (!secondVerify.success) {
+          console.log('🔥 Aplicando rasterización completa como último recurso...');
+          await this.fullRasterization(outputPath);
+          optimizations.push('Rasterización completa aplicada');
+        }
       }
 
       // 4️⃣ OPTIMIZACIÓN ADICIONAL SI EL TAMAÑO ES MAYOR A 3MB
@@ -203,6 +225,7 @@ export class PDFProcessor {
       const extremeCommand = [
         'gs',
         '-sDEVICE=pdfwrite',
+        // === CONVERSIÓN FORZADA MÁS AGRESIVA ===
         '-sProcessColorModel=DeviceGray',
         '-dProcessColorModel=/DeviceGray',
         '-sColorConversionStrategy=Gray',
@@ -213,7 +236,7 @@ export class PDFProcessor {
         '-dQUIET',
         '-dBATCH',
         '-r300',
-        // Forzar rasterización de imágenes
+        // === RASTERIZACIÓN COMPLETA: CONVERTIR TODO A BITMAP Y RECOMPRIMIR ===
         '-dColorImageResolution=300',
         '-dGrayImageResolution=300',
         '-dMonoImageResolution=300',
@@ -224,14 +247,19 @@ export class PDFProcessor {
         '-dGrayImageDownsampleType=/Bicubic',
         '-dColorImageDownsampleThreshold=1.0',
         '-dGrayImageDownsampleThreshold=1.0',
-        // Forzar conversión total
+        // === FORZAR RECODIFICACIÓN COMPLETA ===
+        '-dPassThroughJPEGImages=false', // NO preservar JPEGs
+        '-dPassThroughJPXImages=false',  // NO preservar JPX
         '-dConvertCMYKImagesToRGB=false',
-        '-dAutoFilterColorImages=false',
+        '-dAutoFilterColorImages=false', // Control manual de filtros
         '-dAutoFilterGrayImages=false',
-        '-dEncodeColorImages=true',
+        '-dEncodeColorImages=true',      // Forzar recodificación
         '-dEncodeGrayImages=true',
-        '-dColorImageFilter=/DCTEncode',
+        '-dColorImageFilter=/DCTEncode', // Usar JPEG para compresión
         '-dGrayImageFilter=/DCTEncode',
+        // === CALIDAD ESPECÍFICA PARA FORZAR 8-BIT ===
+        '-dJPEGQ=85',                   // Calidad JPEG decente
+        '-dMonoImageFilter=/CCITTFaxEncode',
         `-sOutputFile=${tempFile}`,
         filePath
       ].join(' ');
@@ -248,6 +276,129 @@ export class PDFProcessor {
         await fs.unlink(tempFile);
       } catch {}
       throw error;
+    }
+  }
+
+  /**
+   * 🔥🔥 RASTERIZACIÓN COMPLETA - ÚLTIMO RECURSO
+   * Convierte el PDF completo a imágenes y luego reconstruye
+   * Garantiza conversión total a escala de grises 8-bit y 300 DPI
+   */
+  async fullRasterization(filePath) {
+    const tempDir = path.dirname(filePath);
+    const baseName = path.basename(filePath, '.pdf');
+    const pngPattern = path.join(tempDir, `${baseName}_page_%03d.png`);
+    const finalFile = filePath + '.raster';
+    
+    try {
+      console.log('🔥 Iniciando rasterización completa del PDF...');
+      
+      // 1️⃣ CONVERTIR PDF A IMÁGENES PNG (300 DPI, ESCALA DE GRISES)
+      const pdfToPngCommand = [
+        'gs',
+        '-sDEVICE=png16m',
+        '-dNOPAUSE',
+        '-dQUIET',
+        '-dBATCH',
+        '-r300', // 300 DPI
+        '-dDownScaleFactor=1',
+        '-dTextAlphaBits=4',
+        '-dGraphicsAlphaBits=4',
+        // Forzar escala de grises desde la conversión
+        '-sProcessColorModel=DeviceGray',
+        '-dProcessColorModel=/DeviceGray',
+        `-sOutputFile=${pngPattern}`,
+        filePath
+      ].join(' ');
+
+      await execAsync(pdfToPngCommand);
+      console.log('✅ PDF convertido a imágenes PNG en escala de grises');
+
+      // 2️⃣ ENCONTRAR TODAS LAS IMÁGENES GENERADAS
+      const { stdout: lsOutput } = await execAsync(`ls "${tempDir}"/${baseName}_page_*.png`);
+      const imageFiles = lsOutput.trim().split('\n').filter(f => f.trim());
+      
+      if (imageFiles.length === 0) {
+        throw new Error('No se generaron imágenes PNG');
+      }
+
+      // 3️⃣ CONVERTIR IMÁGENES A ESCALA DE GRISES 8-BIT CON ImageMagick/Ghostscript
+      for (const imageFile of imageFiles) {
+        if (await this.commandExists('convert')) {
+          // Usar ImageMagick si está disponible
+          await execAsync(`convert "${imageFile}" -colorspace Gray -depth 8 -density 300 "${imageFile}"`);
+        } else {
+          // Alternativa con Ghostscript
+          const tempGrayFile = imageFile + '.gray';
+          await execAsync([
+            'gs',
+            '-sDEVICE=png16m',
+            '-dNOPAUSE',
+            '-dQUIET',
+            '-dBATCH',
+            '-r300',
+            '-sProcessColorModel=DeviceGray',
+            '-dProcessColorModel=/DeviceGray',
+            `-sOutputFile=${tempGrayFile}`,
+            imageFile
+          ].join(' '));
+          await fs.rename(tempGrayFile, imageFile);
+        }
+      }
+
+      // 4️⃣ RECONSTRUIR PDF DESDE LAS IMÁGENES PROCESADAS
+      const imgToPdfCommand = [
+        'gs',
+        '-sDEVICE=pdfwrite',
+        '-dNOPAUSE',
+        '-dQUIET',
+        '-dBATCH',
+        '-r300',
+        '-dPDFSETTINGS=/prepress',
+        '-sProcessColorModel=DeviceGray',
+        '-dProcessColorModel=/DeviceGray',
+        '-dAutoRotatePages=/None',
+        `-sOutputFile=${finalFile}`,
+        ...imageFiles
+      ].join(' ');
+
+      await execAsync(imgToPdfCommand);
+
+      // 5️⃣ LIMPIAR IMÁGENES TEMPORALES
+      for (const imageFile of imageFiles) {
+        try {
+          await fs.unlink(imageFile);
+        } catch {}
+      }
+
+      // 6️⃣ REEMPLAZAR ARCHIVO ORIGINAL
+      await fs.rename(finalFile, filePath);
+      console.log('✅ Rasterización completa exitosa - PDF reconstruido');
+      
+    } catch (error) {
+      console.error('❌ Error en rasterización completa:', error);
+      // Limpiar archivos temporales en caso de error
+      try {
+        const { stdout: cleanupFiles } = await execAsync(`ls "${tempDir}"/${baseName}_page_*.png 2>/dev/null || true`);
+        const filesToClean = cleanupFiles.trim().split('\n').filter(f => f.trim());
+        for (const file of filesToClean) {
+          await fs.unlink(file);
+        }
+        await fs.unlink(finalFile).catch(() => {});
+      } catch {}
+      throw error;
+    }
+  }
+
+  /**
+   * 🔧 VERIFICAR SI UN COMANDO EXISTE
+   */
+  async commandExists(command) {
+    try {
+      await execAsync(`which ${command}`);
+      return true;
+    } catch {
+      return false;
     }
   }
 
