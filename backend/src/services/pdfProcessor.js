@@ -155,16 +155,16 @@ export class PDFProcessor {
         await this.extremeConversion(outputPath);
         optimizations.push('Conversión extrema aplicada');
         
-        // 🔥 Si TODAVÍA no cumple, usar PDF-REST directamente (más confiable que rasterización)
+        // 🔥 Si TODAVÍA no cumple, usar ConvertAPI (más confiable que PDF-REST)
         const secondVerify = await this.quickImageCheck(outputPath);
         if (!secondVerify.success) {
-          console.log('🌐 Aplicando PDF-REST como método preferido...');
+          console.log('🌐 Aplicando ConvertAPI como método preferido...');
           
           try {
-            await this.pdfRestConversion(outputPath);
-            optimizations.push('PDF-REST aplicado exitosamente');
-          } catch (pdfRestError) {
-            console.warn('⚠️ PDF-REST no disponible, usando métodos alternativos locales...');
+            await this.convertApiConversion(outputPath);
+            optimizations.push('ConvertAPI aplicado exitosamente');
+          } catch (convertApiError) {
+            console.warn('⚠️ ConvertAPI no disponible, usando métodos alternativos locales...');
             
             // Métodos alternativos locales (más confiables para fallback)
             const alternativeMethods = [
@@ -576,31 +576,241 @@ export class PDFProcessor {
   }
 
   /**
-   * 🌐 CONVERSIÓN CON PDF-REST API
-   * Usa servicios en la nube para conversión profesional
+   * 🌐 CONVERSIÓN CON CONVERTAPI
+   * Usa servicios en la nube ConvertAPI para conversión profesional
    */
-  async pdfRestConversion(filePath) {
+  async convertApiConversion(filePath) {
     try {
-      console.log('🌐 Aplicando conversión con PDF-REST API...');
+      console.log('🌐 Aplicando conversión con ConvertAPI...');
       
       // Leer el archivo
       const fileBuffer = await fs.readFile(filePath);
       
-      // Usar PDF-REST para optimización
-      const result = await this.callPdfRestAPI(fileBuffer);
+      // Usar ConvertAPI para optimización
+      const result = await this.callConvertAPI(fileBuffer);
       
       if (result.success && result.buffer) {
         // Escribir el resultado optimizado
         await fs.writeFile(filePath, result.buffer);
-        console.log('✅ Conversión PDF-REST completada');
+        console.log('✅ Conversión ConvertAPI completada');
         return result;
       } else {
-        throw new Error('PDF-REST no pudo procesar el archivo');
+        throw new Error('ConvertAPI no pudo procesar el archivo');
       }
       
     } catch (error) {
-      console.warn('⚠️ PDF-REST conversión falló:', error.message);
+      console.warn('⚠️ ConvertAPI conversión falló:', error.message);
       throw error;
+    }
+  }
+
+  /**
+   * 🔌 LLAMADA A CONVERTAPI
+   * Integración con servicios de ConvertAPI
+   */
+  async callConvertAPI(fileBuffer) {
+    try {
+      console.log('🌐 Verificando disponibilidad de ConvertAPI...');
+      
+      // Estrategia 1: PDF Optimize (conversión completa)
+      const optimizeResult = await this.convertApiOptimize(fileBuffer);
+      if (optimizeResult.success) {
+        return optimizeResult;
+      }
+
+      // Estrategia 2: PDF to PDF/A (estándar archival con escala grises)
+      const pdfAResult = await this.convertApiToPdfA(fileBuffer);
+      if (pdfAResult.success) {
+        return pdfAResult;
+      }
+
+      // Estrategia 3: Compress (compresión básica)
+      const compressResult = await this.convertApiCompress(fileBuffer);
+      return compressResult;
+
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * ⚡ CONVERTAPI OPTIMIZE
+   * Optimización completa con ConvertAPI
+   */
+  async convertApiOptimize(fileBuffer) {
+    try {
+      const FormData = (await import('form-data')).default;
+      const fetch = (await import('node-fetch')).default;
+      
+      const form = new FormData();
+      form.append('File', fileBuffer, {
+        filename: 'document.pdf',
+        contentType: 'application/pdf'
+      });
+      
+      // Parámetros específicos para nuestros requerimientos
+      form.append('ImageDpi', '300');          // 300 DPI
+      form.append('ImageQuality', '85');        // Calidad alta
+      form.append('ColorSpace', 'Gray');        // Escala grises
+      form.append('OptimizeImages', 'true');    // Optimizar imágenes
+      form.append('CompressImages', 'true');    // Comprimir imágenes
+      
+      const apiKey = process.env.CONVERTAPI_SECRET || 'demo';
+      
+      // ConvertAPI PDF Optimize endpoint
+      const response = await fetch(`https://v2.convertapi.com/convert/pdf/to/pdf?Secret=${apiKey}`, {
+        method: 'POST',
+        body: form,
+        timeout: 60000 // 60 segundos
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        if (result.Files && result.Files.length > 0) {
+          // Descargar el archivo procesado
+          const fileUrl = result.Files[0].Url;
+          const fileResponse = await fetch(fileUrl);
+          const resultBuffer = await fileResponse.buffer();
+          
+          console.log('✅ ConvertAPI Optimize exitoso');
+          return { 
+            success: true, 
+            buffer: resultBuffer,
+            method: 'ConvertAPI Optimize',
+            originalSize: fileBuffer.length,
+            newSize: resultBuffer.length
+          };
+        } else {
+          throw new Error('ConvertAPI no devolvió archivos');
+        }
+      } else {
+        const errorText = await response.text();
+        throw new Error(`ConvertAPI Optimize HTTP ${response.status}: ${errorText}`);
+      }
+
+    } catch (error) {
+      console.warn('⚠️ ConvertAPI Optimize falló:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * 📋 CONVERTAPI TO PDF/A
+   * Conversión a PDF/A con escala grises
+   */
+  async convertApiToPdfA(fileBuffer) {
+    try {
+      const FormData = (await import('form-data')).default;
+      const fetch = (await import('node-fetch')).default;
+      
+      const form = new FormData();
+      form.append('File', fileBuffer, {
+        filename: 'document.pdf',
+        contentType: 'application/pdf'
+      });
+      
+      // Parámetros para PDF/A con escala grises
+      form.append('PdfAVersion', '1b');         // PDF/A-1b
+      form.append('ImageDpi', '300');           // 300 DPI
+      form.append('ColorSpace', 'Gray');        // Forzar escala grises
+      form.append('ImageQuality', '85');        // Calidad controlada
+      
+      const apiKey = process.env.CONVERTAPI_SECRET || 'demo';
+      
+      // ConvertAPI PDF to PDF/A endpoint
+      const response = await fetch(`https://v2.convertapi.com/convert/pdf/to/pdfa?Secret=${apiKey}`, {
+        method: 'POST',
+        body: form,
+        timeout: 60000
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        if (result.Files && result.Files.length > 0) {
+          const fileUrl = result.Files[0].Url;
+          const fileResponse = await fetch(fileUrl);
+          const resultBuffer = await fileResponse.buffer();
+          
+          console.log('✅ ConvertAPI PDF/A exitoso');
+          return { 
+            success: true, 
+            buffer: resultBuffer,
+            method: 'ConvertAPI PDF/A',
+            originalSize: fileBuffer.length,
+            newSize: resultBuffer.length
+          };
+        } else {
+          throw new Error('ConvertAPI PDF/A no devolvió archivos');
+        }
+      } else {
+        const errorText = await response.text();
+        throw new Error(`ConvertAPI PDF/A HTTP ${response.status}: ${errorText}`);
+      }
+
+    } catch (error) {
+      console.warn('⚠️ ConvertAPI PDF/A falló:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * 🗜️ CONVERTAPI COMPRESS
+   * Compresión básica con ConvertAPI
+   */
+  async convertApiCompress(fileBuffer) {
+    try {
+      const FormData = (await import('form-data')).default;
+      const fetch = (await import('node-fetch')).default;
+      
+      const form = new FormData();
+      form.append('File', fileBuffer, {
+        filename: 'document.pdf',
+        contentType: 'application/pdf'
+      });
+      
+      // Parámetros de compresión
+      form.append('ImageDpi', '300');           // Mantener 300 DPI
+      form.append('ImageQuality', '75');        // Compresión moderada
+      form.append('ColorSpace', 'Gray');        // Escala grises
+      
+      const apiKey = process.env.CONVERTAPI_SECRET || 'demo';
+      
+      // ConvertAPI Compress endpoint
+      const response = await fetch(`https://v2.convertapi.com/convert/pdf/to/compress?Secret=${apiKey}`, {
+        method: 'POST',
+        body: form,
+        timeout: 60000
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        
+        if (result.Files && result.Files.length > 0) {
+          const fileUrl = result.Files[0].Url;
+          const fileResponse = await fetch(fileUrl);
+          const resultBuffer = await fileResponse.buffer();
+          
+          console.log('✅ ConvertAPI Compress exitoso');
+          return { 
+            success: true, 
+            buffer: resultBuffer,
+            method: 'ConvertAPI Compress',
+            originalSize: fileBuffer.length,
+            newSize: resultBuffer.length
+          };
+        } else {
+          throw new Error('ConvertAPI Compress no devolvió archivos');
+        }
+      } else {
+        const errorText = await response.text();
+        throw new Error(`ConvertAPI Compress HTTP ${response.status}: ${errorText}`);
+      }
+
+    } catch (error) {
+      console.warn('⚠️ ConvertAPI Compress falló:', error.message);
+      return { success: false, error: error.message };
     }
   }
 
