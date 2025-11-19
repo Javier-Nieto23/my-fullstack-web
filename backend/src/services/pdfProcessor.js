@@ -168,6 +168,10 @@ export class PDFProcessor {
             
             // Métodos alternativos locales (más confiables para fallback)
             const alternativeMethods = [
+              () => this.imageMagickConversion(outputPath),
+              () => this.powerImageMagickConversion(outputPath),
+              () => this.pdftkConversion(outputPath),
+              () => this.imageExtractionConversion(outputPath),
               () => this.pageByPageConversion(outputPath),
               () => this.simpleGrayscaleConversion(outputPath),
               () => this.mutoolConversion(outputPath), 
@@ -1296,6 +1300,235 @@ export class PDFProcessor {
 
     tools.available = tools.ghostscript && tools.pdfimages;
     return tools;
+  }
+
+  /**
+   * 🎨 CONVERSIÓN CON IMAGEMAGICK
+   * Método confiable usando ImageMagick para conversión directa
+   */
+  async imageMagickConversion(filePath) {
+    try {
+      console.log('🎨 Aplicando conversión con ImageMagick...');
+      
+      const tempFile = filePath + '.imagemagick';
+      
+      // ImageMagick puede convertir PDFs directamente
+      const convertCommand = [
+        'convert',
+        `"${filePath}"`,
+        '-colorspace', 'Gray',           // Forzar escala de grises
+        '-depth', '8',                   // 8 bits por componente
+        '-density', '300',               // 300 DPI
+        '-quality', '85',                // Calidad JPEG
+        '-compress', 'JPEG',             // Compresión JPEG
+        '-units', 'PixelsPerInch',       // Unidades en DPI
+        `"${tempFile}"`
+      ].join(' ');
+
+      await execAsync(convertCommand);
+      
+      // Verificar que se generó el archivo
+      const stats = await fs.stat(tempFile);
+      if (stats.size === 0) {
+        throw new Error('ImageMagick generó archivo vacío');
+      }
+      
+      // Reemplazar archivo original
+      await fs.rename(tempFile, filePath);
+      console.log('✅ Conversión ImageMagick completada');
+      
+    } catch (error) {
+      console.warn('⚠️ ImageMagick conversión falló:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * 📦 CONVERSIÓN CON PDFTK + IMAGEMAGICK
+   * Descompone PDF y reconstruye con herramientas especializadas
+   */
+  async pdftkConversion(filePath) {
+    const tempDir = path.dirname(filePath);
+    const baseName = path.basename(filePath, '.pdf');
+    const workDir = path.join(tempDir, `${baseName}_pdftk`);
+    const finalFile = filePath + '.pdftk';
+    
+    try {
+      console.log('📦 Aplicando conversión con pdftk + ImageMagick...');
+      
+      // Crear directorio de trabajo
+      await fs.mkdir(workDir, { recursive: true });
+      
+      // 1. Convertir PDF a imágenes PNG en escala de grises usando Ghostscript
+      const pngPattern = path.join(workDir, 'page_%03d.png');
+      await execAsync([
+        'gs',
+        '-sDEVICE=pnggray',  // Usar dispositivo de escala de grises directamente
+        '-r300',             // 300 DPI
+        '-dNOPAUSE',
+        '-dQUIET',
+        '-dBATCH',
+        `-sOutputFile=${pngPattern}`,
+        filePath
+      ].join(' '));
+      
+      // 2. Encontrar todas las imágenes generadas
+      const { stdout: pngList } = await execAsync(`ls "${workDir}"/page_*.png 2>/dev/null || echo ""`);
+      const pngFiles = pngList.trim().split('\n').filter(f => f.trim()).sort();
+      
+      if (pngFiles.length === 0) {
+        throw new Error('No se generaron imágenes PNG');
+      }
+      
+      // 3. Procesar cada imagen para asegurar 8-bit grayscale con ImageMagick
+      for (const pngFile of pngFiles) {
+        if (pngFile.trim()) {
+          await execAsync(`convert "${pngFile}" -colorspace Gray -depth 8 -density 300 "${pngFile}"`);
+        }
+      }
+      
+      // 4. Reconstruir PDF desde imágenes usando ImageMagick
+      await execAsync(`convert ${pngFiles.map(f => `"${f}"`).join(' ')} -density 300 "${finalFile}"`);
+      
+      // 5. Limpiar directorio de trabajo
+      await fs.rm(workDir, { recursive: true, force: true });
+      
+      // 6. Reemplazar archivo original
+      await fs.rename(finalFile, filePath);
+      console.log('✅ Conversión pdftk completada');
+      
+    } catch (error) {
+      // Limpiar en caso de error
+      try {
+        await fs.rm(workDir, { recursive: true, force: true });
+        await fs.unlink(finalFile);
+      } catch {}
+      throw error;
+    }
+  }
+
+  /**
+   * 🔧 CONVERSIÓN DIRECTA CON IMAGEMAGICK POTENTE
+   * Método directo y potente para conversión completa
+   */
+  async powerImageMagickConversion(filePath) {
+    try {
+      console.log('🔧 Aplicando conversión directa potente con ImageMagick...');
+      
+      const tempFile = filePath + '.power';
+      
+      // Comando ImageMagick más potente y directo
+      const powerCommand = [
+        'convert',
+        '-density', '300',               // Leer con 300 DPI
+        `"${filePath}"`,
+        '-colorspace', 'Gray',           // Convertir a escala de grises
+        '-type', 'Grayscale',            // Forzar tipo grayscale
+        '-depth', '8',                   // 8 bits por componente
+        '-quality', '90',                // Calidad alta
+        '-compress', 'LZW',              // Compresión sin pérdida
+        '-alpha', 'remove',              // Remover canal alfa
+        '-density', '300',               // Escribir con 300 DPI
+        '-units', 'PixelsPerInch',       // Unidades
+        `"${tempFile}"`
+      ].join(' ');
+
+      await execAsync(powerCommand);
+      
+      // Verificar resultado
+      const stats = await fs.stat(tempFile);
+      if (stats.size === 0) {
+        throw new Error('ImageMagick potente generó archivo vacío');
+      }
+      
+      // Reemplazar archivo original
+      await fs.rename(tempFile, filePath);
+      console.log('✅ Conversión ImageMagick potente completada');
+      
+    } catch (error) {
+      console.warn('⚠️ ImageMagick potente falló:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * 🎯 CONVERSIÓN POR EXTRACCIÓN DE IMÁGENES
+   * Extrae imágenes, las convierte y reconstruye PDF
+   */
+  async imageExtractionConversion(filePath) {
+    const tempDir = path.dirname(filePath);
+    const baseName = path.basename(filePath, '.pdf');
+    const workDir = path.join(tempDir, `${baseName}_extract`);
+    const finalFile = filePath + '.extract';
+    
+    try {
+      console.log('🎯 Aplicando conversión por extracción de imágenes...');
+      
+      // Crear directorio de trabajo
+      await fs.mkdir(workDir, { recursive: true });
+      
+      // 1. Extraer todas las imágenes del PDF con pdfimages
+      const imagePrefix = path.join(workDir, 'img');
+      try {
+        await execAsync(`pdfimages -all "${filePath}" "${imagePrefix}"`);
+      } catch (pdfimagesError) {
+        console.log('pdfimages falló, usando método alternativo...');
+        // Fallback a conversión página por página
+        return await this.pageByPageConversion(filePath);
+      }
+      
+      // 2. Encontrar imágenes extraídas
+      const { stdout: imageList } = await execAsync(`find "${workDir}" -name "img*" -type f 2>/dev/null || echo ""`);
+      const imageFiles = imageList.trim().split('\n').filter(f => f.trim());
+      
+      if (imageFiles.length > 0) {
+        // 3. Convertir cada imagen a escala de grises
+        for (const imageFile of imageFiles) {
+          if (imageFile.trim()) {
+            try {
+              await execAsync(`convert "${imageFile}" -colorspace Gray -depth 8 -density 300 "${imageFile}.gray"`);
+              await fs.rename(`${imageFile}.gray`, imageFile);
+            } catch (convError) {
+              console.warn(`Error convirtiendo imagen: ${convError.message}`);
+            }
+          }
+        }
+      }
+      
+      // 4. Reconstruir PDF usando Ghostscript con configuración agresiva
+      const rebuildCommand = [
+        'gs',
+        '-sDEVICE=pdfwrite',
+        '-dNOPAUSE',
+        '-dQUIET',
+        '-dBATCH',
+        '-r300',
+        '-sColorConversionStrategy=Gray',
+        '-dProcessColorModel=/DeviceGray',
+        '-dOverrideICC=true',
+        '-dCompatibilityLevel=1.4',
+        '-dAutoRotatePages=/None',
+        `-sOutputFile=${finalFile}`,
+        filePath
+      ].join(' ');
+
+      await execAsync(rebuildCommand);
+      
+      // 5. Limpiar directorio de trabajo
+      await fs.rm(workDir, { recursive: true, force: true });
+      
+      // 6. Reemplazar archivo original
+      await fs.rename(finalFile, filePath);
+      console.log('✅ Conversión por extracción completada');
+      
+    } catch (error) {
+      // Limpiar en caso de error
+      try {
+        await fs.rm(workDir, { recursive: true, force: true });
+        await fs.unlink(finalFile);
+      } catch {}
+      throw error;
+    }
   }
 
   /**
