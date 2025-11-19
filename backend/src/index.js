@@ -9,10 +9,25 @@ import fetch from 'node-fetch'
 import FormData from 'form-data'
 import fs from 'fs'
 import path from 'path'
+import { fileURLToPath } from 'url'
+import { dirname } from 'path'
 
 const app = express()
 
 const prisma = new PrismaClient()
+
+// Configurar __dirname para ES modules
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+// Crear directorio uploads si no existe
+const uploadsDir = path.join(__dirname, '../uploads')
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true })
+}
+
+// Servir archivos estáticos desde uploads
+app.use('/uploads', express.static(uploadsDir))
 
 app.use(express.json())
 
@@ -34,7 +49,17 @@ const corsOptions = {
 app.use(cors(corsOptions))
 
 // Configurar multer para manejo de archivos
-const storage = multer.memoryStorage()
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir)
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9)
+    const extension = path.extname(file.originalname)
+    cb(null, `pdf-${uniqueSuffix}${extension}`)
+  }
+})
+
 const upload = multer({ 
   storage,
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
@@ -127,11 +152,13 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
       return res.status(400).json({ error: 'No se proporcionó archivo PDF' })
     }
 
-    const { originalname, buffer, size } = req.file
+    const { originalname, filename, size, path: filePath } = req.file
     const userId = req.user.id
 
     // Validaciones
     if (size > 5 * 1024 * 1024) {
+      // Eliminar archivo si excede el tamaño
+      fs.unlinkSync(filePath)
       return res.status(400).json({ error: 'El archivo excede el tamaño máximo (5MB)' })
     }
 
@@ -153,7 +180,8 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
         userId: userId,
         company: 'Empresa Demo', // Por ahora valor fijo
         uploadDate: new Date(),
-        processedAt: processedStatus === 'processed' ? new Date() : null
+        processedAt: processedStatus === 'processed' ? new Date() : null,
+        filePath: filename // Guardar nombre del archivo generado
       }
     })
 
@@ -165,7 +193,8 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
         status: document.status,
         size: document.size,
         uploadDate: document.uploadDate,
-        company: document.company
+        company: document.company,
+        fileUrl: `/api/documents/${document.id}/view`
       }
     })
 
@@ -191,11 +220,19 @@ app.get('/documents', verifyToken, async (req, res) => {
         status: true,
         company: true,
         uploadDate: true,
-        processedAt: true
+        processedAt: true,
+        filePath: true
       }
     })
 
-    res.status(200).json(documents)
+    // Agregar URLs de visualización y descarga
+    const documentsWithUrls = documents.map(doc => ({
+      ...doc,
+      fileUrl: `/api/documents/${doc.id}/view`,
+      downloadUrl: `/api/documents/${doc.id}/download`
+    }))
+
+    res.status(200).json(documentsWithUrls)
   } catch (error) {
     console.error('Error obteniendo documentos:', error)
     res.status(500).json({ error: 'Error al obtener documentos' })
@@ -303,6 +340,88 @@ app.get('/documents/stats', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('Error obteniendo estadísticas:', error)
     res.status(500).json({ error: 'Error al obtener estadísticas' })
+  }
+})
+
+// GET /api/documents/:id/view - Visualizar PDF
+app.get('/api/documents/:id/view', verifyToken, async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id)
+    const userId = req.user.id
+
+    // Verificar que el documento pertenezca al usuario
+    const document = await prisma.document.findFirst({
+      where: {
+        id: documentId,
+        userId: userId
+      }
+    })
+
+    if (!document) {
+      return res.status(404).json({ error: 'Documento no encontrado' })
+    }
+
+    if (!document.filePath) {
+      return res.status(404).json({ error: 'Archivo no encontrado en el servidor' })
+    }
+
+    const filePath = path.join(uploadsDir, document.filePath)
+    
+    // Verificar que el archivo existe
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Archivo no encontrado en el sistema' })
+    }
+
+    // Configurar headers para PDF
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `inline; filename="${document.originalName}"`)
+    
+    // Enviar archivo
+    res.sendFile(filePath)
+  } catch (error) {
+    console.error('Error sirviendo PDF:', error)
+    res.status(500).json({ error: 'Error al mostrar documento' })
+  }
+})
+
+// GET /api/documents/:id/download - Descargar PDF
+app.get('/api/documents/:id/download', verifyToken, async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id)
+    const userId = req.user.id
+
+    // Verificar que el documento pertenezca al usuario
+    const document = await prisma.document.findFirst({
+      where: {
+        id: documentId,
+        userId: userId
+      }
+    })
+
+    if (!document) {
+      return res.status(404).json({ error: 'Documento no encontrado' })
+    }
+
+    if (!document.filePath) {
+      return res.status(404).json({ error: 'Archivo no encontrado en el servidor' })
+    }
+
+    const filePath = path.join(uploadsDir, document.filePath)
+    
+    // Verificar que el archivo existe
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'Archivo no encontrado en el sistema' })
+    }
+
+    // Configurar headers para descarga
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `attachment; filename="${document.originalName}"`)
+    
+    // Enviar archivo
+    res.sendFile(filePath)
+  } catch (error) {
+    console.error('Error descargando PDF:', error)
+    res.status(500).json({ error: 'Error al descargar documento' })
   }
 })
 

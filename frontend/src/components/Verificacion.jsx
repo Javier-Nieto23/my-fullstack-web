@@ -441,7 +441,13 @@ const Verificacion = () => {
   }
 
   const viewPdf = (doc) => {
-    setViewingPdf(doc)
+    if (doc.fileUrl) {
+      // Crear URL completa para la visualización
+      const fullUrl = `${API_URL}${doc.fileUrl}`
+      setViewingPdf({ ...doc, fullUrl })
+    } else {
+      Swal.fire('Error', 'No se puede mostrar el documento. Archivo no disponible.', 'error')
+    }
   }
 
   const viewConvertedPdf = (doc) => {
@@ -846,19 +852,27 @@ const Verificacion = () => {
                 <button type="button" className="btn-close" onClick={() => setViewingPdf(null)}></button>
               </div>
               <div className="modal-body p-0">
-                <div style={{height: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#f8f9fa'}}>
-                  <div className="text-center">
-                    <i className="bi bi-file-pdf text-danger" style={{fontSize: '4rem'}}></i>
-                    <h4 className="mt-3">Vista Previa del PDF</h4>
-                    <p className="text-muted">Documento del backend</p>
-                    <small className="text-muted">
-                      En una implementación completa, aquí se integraría un visor de PDF como PDF.js
-                    </small>
-                  </div>
-                </div>
+                <iframe
+                  src={viewingPdf.fullUrl}
+                  style={{width: '100%', height: '70vh', border: 'none'}}
+                  title={`PDF: ${viewingPdf.name}`}
+                />
               </div>
               <div className="modal-footer">
-                <button className="btn btn-secondary" onClick={() => setViewingPdf(null)}>Cerrar</button>
+                <button className="btn btn-secondary" onClick={() => setViewingPdf(null)}>
+                  Cerrar
+                </button>
+                {viewingPdf.downloadUrl && (
+                  <button 
+                    className="btn btn-success"
+                    onClick={() => {
+                      const downloadUrl = `${API_URL}${viewingPdf.downloadUrl}`
+                      window.open(downloadUrl, '_blank')
+                    }}
+                  >
+                    <i className="bi bi-download me-1"></i>Descargar PDF
+                  </button>
+                )}
               </div>
             </div>
           </div>
