@@ -7,10 +7,14 @@ RUN apk add --no-cache \
     poppler-utils \
     mupdf-tools \
     ghostscript \
+    imagemagick \
+    pdftk \
+    libpng-dev \
+    libjpeg-turbo-dev \
     && ln -sf /usr/bin/mutool /usr/local/bin/mutool
 
 # Verificar que las herramientas estén disponibles
-RUN pdfinfo -v && pdfimages -help && mutool -v && gs --version
+RUN pdfinfo -v && pdfimages -help && mutool -v && gs --version && convert -version
 
 # Copiar archivos de dependencias del backend
 COPY backend/package*.json ./

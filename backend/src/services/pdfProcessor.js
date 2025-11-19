@@ -172,7 +172,9 @@ export class PDFProcessor {
               () => this.powerImageMagickConversion(outputPath),
               () => this.pdftkConversion(outputPath),
               () => this.imageExtractionConversion(outputPath),
+              () => this.ghostscriptOnlyConversion(outputPath),
               () => this.pageByPageConversion(outputPath),
+              () => this.emergencyConversion(outputPath),
               () => this.simpleGrayscaleConversion(outputPath),
               () => this.mutoolConversion(outputPath), 
               () => this.popplerBasedConversion(outputPath),
@@ -1490,6 +1492,7 @@ export class PDFProcessor {
               await fs.rename(`${imageFile}.gray`, imageFile);
             } catch (convError) {
               console.warn(`Error convirtiendo imagen: ${convError.message}`);
+              // Si ImageMagick falla, usar método sin conversión de imagen individual
             }
           }
         }
@@ -1526,6 +1529,212 @@ export class PDFProcessor {
       try {
         await fs.rm(workDir, { recursive: true, force: true });
         await fs.unlink(finalFile);
+      } catch {}
+      throw error;
+    }
+  }
+
+  /**
+   * 🛠️ CONVERSIÓN SOLO CON GHOSTSCRIPT - MÉTODO ROBUSTO
+   * Método que solo depende de Ghostscript, sin ImageMagick
+   */
+  async ghostscriptOnlyConversion(filePath) {
+    const tempFile = filePath + '.ghost';
+    
+    try {
+      console.log('🛠️ Aplicando conversión solo con Ghostscript...');
+      
+      // Comando Ghostscript ultra-agresivo para escala de grises
+      const gsCommand = [
+        'gs',
+        '-sDEVICE=pdfwrite',
+        '-dNOPAUSE',
+        '-dQUIET',
+        '-dBATCH',
+        '-r300',                                    // 300 DPI
+        '-sColorConversionStrategy=Gray',           // Conversión a grises
+        '-dProcessColorModel=/DeviceGray',          // Modelo de color gris
+        '-dOverrideICC=true',                       // Sobrescribir ICC
+        '-dDownsampleColorImages=true',             // Downsample color
+        '-dColorImageResolution=300',               // Resolución color
+        '-dDownsampleGrayImages=true',              // Downsample grises
+        '-dGrayImageResolution=300',                // Resolución grises
+        '-dDownsampleMonoImages=true',              // Downsample mono
+        '-dMonoImageResolution=300',                // Resolución mono
+        '-dConvertCMYKImagesToRGB=true',           // CMYK a RGB
+        '-dFastWebView=true',                       // Optimización web
+        '-dEmbedAllFonts=true',                     // Embeber fuentes
+        '-dSubsetFonts=true',                       // Subset fonts
+        '-dCompressFonts=true',                     // Comprimir fuentes
+        '-dOptimize=true',                          // Optimizar
+        '-dDetectDuplicateImages=true',             // Detectar duplicados
+        '-dAdjustWidth=0',                          // No ajustar ancho
+        '-dCompatibilityLevel=1.4',                // Compatibilidad PDF 1.4
+        `-sOutputFile=${tempFile}`,
+        `"${filePath}"`
+      ].join(' ');
+
+      await execAsync(gsCommand);
+      
+      // Verificar resultado
+      const stats = await fs.stat(tempFile);
+      if (stats.size === 0) {
+        throw new Error('Ghostscript generó archivo vacío');
+      }
+      
+      // Reemplazar archivo original
+      await fs.rename(tempFile, filePath);
+      console.log('✅ Conversión solo Ghostscript completada');
+      
+    } catch (error) {
+      console.warn('⚠️ Conversión solo Ghostscript falló:', error.message);
+      // Limpiar archivo temporal
+      try {
+        await fs.unlink(tempFile);
+      } catch {}
+      throw error;
+    }
+  }
+
+  /**
+   * 📄 CONVERSIÓN PÁGINA POR PÁGINA CON MUTOOL
+   * Usa mutool y Ghostscript para conversión por páginas
+   */
+  async pageByPageConversion(filePath) {
+    const tempDir = path.dirname(filePath);
+    const baseName = path.basename(filePath, '.pdf');
+    const workDir = path.join(tempDir, `${baseName}_pages`);
+    const finalFile = filePath + '.pages';
+    
+    try {
+      console.log('📄 Aplicando conversión página por página...');
+      
+      // Crear directorio de trabajo
+      await fs.mkdir(workDir, { recursive: true });
+      
+      // 1. Obtener número de páginas con mutool
+      let pageCount = 1;
+      try {
+        const { stdout } = await execAsync(`mutool info "${filePath}"`);
+        const pageMatch = stdout.match(/Pages:\s*(\d+)/);
+        if (pageMatch) {
+          pageCount = parseInt(pageMatch[1]);
+        }
+      } catch (error) {
+        console.warn('No se pudo determinar número de páginas, asumiendo 1');
+      }
+      
+      // 2. Convertir cada página individualmente
+      const pageFiles = [];
+      for (let i = 1; i <= pageCount; i++) {
+        const pageFile = path.join(workDir, `page_${i.toString().padStart(3, '0')}.pdf`);
+        
+        try {
+          // Extraer página usando mutool
+          await execAsync(`mutool clean -g "${filePath}" "${pageFile}" ${i}`);
+          
+          // Procesar página con Ghostscript
+          const processedPage = pageFile + '.processed';
+          const gsPageCommand = [
+            'gs',
+            '-sDEVICE=pdfwrite',
+            '-dNOPAUSE',
+            '-dQUIET',
+            '-dBATCH',
+            '-r300',
+            '-sColorConversionStrategy=Gray',
+            '-dProcessColorModel=/DeviceGray',
+            '-dOverrideICC=true',
+            '-dCompatibilityLevel=1.4',
+            `-sOutputFile=${processedPage}`,
+            `"${pageFile}"`
+          ].join(' ');
+          
+          await execAsync(gsPageCommand);
+          await fs.rename(processedPage, pageFile);
+          pageFiles.push(pageFile);
+          
+        } catch (pageError) {
+          console.warn(`Error procesando página ${i}:`, pageError.message);
+          // Continuar con las demás páginas
+        }
+      }
+      
+      // 3. Combinar páginas procesadas
+      if (pageFiles.length > 0) {
+        const combineCommand = [
+          'gs',
+          '-sDEVICE=pdfwrite',
+          '-dNOPAUSE',
+          '-dQUIET',
+          '-dBATCH',
+          '-dCompatibilityLevel=1.4',
+          `-sOutputFile=${finalFile}`,
+          ...pageFiles.map(f => `"${f}"`)
+        ].join(' ');
+        
+        await execAsync(combineCommand);
+      } else {
+        throw new Error('No se procesó ninguna página correctamente');
+      }
+      
+      // 4. Limpiar directorio de trabajo
+      await fs.rm(workDir, { recursive: true, force: true });
+      
+      // 5. Reemplazar archivo original
+      await fs.rename(finalFile, filePath);
+      console.log('✅ Conversión página por página completada');
+      
+    } catch (error) {
+      // Limpiar en caso de error
+      try {
+        await fs.rm(workDir, { recursive: true, force: true });
+        await fs.unlink(finalFile);
+      } catch {}
+      throw error;
+    }
+  }
+
+  /**
+   * 🔧 CONVERSIÓN DE EMERGENCIA ULTRA-SIMPLE
+   * Método mínimo usando solo herramientas básicas
+   */
+  async emergencyConversion(filePath) {
+    const tempFile = filePath + '.emergency';
+    
+    try {
+      console.log('🔧 Aplicando conversión de emergencia ultra-simple...');
+      
+      // Comando Ghostscript mínimo pero efectivo
+      const emergencyCommand = [
+        'gs',
+        '-sDEVICE=pdfwrite',
+        '-dNOPAUSE',
+        '-dBATCH',
+        '-dQUIET',
+        '-r300',
+        '-sColorConversionStrategy=Gray',
+        '-dProcessColorModel=/DeviceGray',
+        `-sOutputFile=${tempFile}`,
+        `"${filePath}"`
+      ].join(' ');
+
+      await execAsync(emergencyCommand);
+      
+      // Verificar resultado
+      const stats = await fs.stat(tempFile);
+      if (stats.size === 0) {
+        throw new Error('Conversión de emergencia generó archivo vacío');
+      }
+      
+      // Reemplazar archivo original
+      await fs.rename(tempFile, filePath);
+      console.log('✅ Conversión de emergencia completada');
+      
+    } catch (error) {
+      console.warn('⚠️ Conversión de emergencia falló:', error.message);
+      try {
+        await fs.unlink(tempFile);
       } catch {}
       throw error;
     }
