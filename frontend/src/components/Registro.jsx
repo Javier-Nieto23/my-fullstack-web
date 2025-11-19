@@ -20,8 +20,75 @@ const Registro = () => {
   const navigate = useNavigate();
   const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
+  // Función para validar formato del RFC
+  const validateRFC = (rfc) => {
+    // Debe tener exactamente 12 caracteres
+    if (rfc.length !== 12) {
+      return {
+        valid: false,
+        message: "El RFC debe tener exactamente 12 caracteres (4 letras + 8 números)."
+      };
+    }
+    
+    // Verificar que los primeros 4 caracteres sean letras
+    const letters = rfc.substring(0, 4);
+    if (!/^[A-Z]{4}$/.test(letters)) {
+      return {
+        valid: false,
+        message: "Los primeros 4 caracteres del RFC deben ser letras."
+      };
+    }
+    
+    // Verificar que los siguientes 8 caracteres sean números
+    const numbers = rfc.substring(4);
+    if (!/^[0-9]{8}$/.test(numbers)) {
+      return {
+        valid: false,
+        message: "Los últimos 8 caracteres del RFC deben ser números."
+      };
+    }
+    
+    return { valid: true, message: "" };
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
+    
+    // Validación especial para RFC
+    if (name === "rfc") {
+      // Convertir a mayúsculas y filtrar solo letras y números
+      let rfcValue = value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      
+      // Limitar a 12 caracteres máximo
+      if (rfcValue.length > 12) {
+        rfcValue = rfcValue.substring(0, 12);
+      }
+      
+      // Validar formato: primeras 4 posiciones solo letras, siguientes 8 solo números
+      let formattedRfc = "";
+      for (let i = 0; i < rfcValue.length; i++) {
+        const char = rfcValue[i];
+        if (i < 4) {
+          // Primeras 4 posiciones: solo letras
+          if (/[A-Z]/.test(char)) {
+            formattedRfc += char;
+          }
+        } else {
+          // Siguientes 8 posiciones: solo números
+          if (/[0-9]/.test(char)) {
+            formattedRfc += char;
+          }
+        }
+      }
+      
+      setFormData({
+        ...formData,
+        [name]: formattedRfc,
+      });
+      return;
+    }
+    
+    // Para otros campos, comportamiento normal
     setFormData({
       ...formData,
       [name]: value,
@@ -44,6 +111,16 @@ const Registro = () => {
       setAlertMsg({
         type: "danger",
         text: "El RFC debe tener al menos 12 caracteres.",
+      });
+      return;
+    }
+
+    // Validar formato específico del RFC
+    const rfcValidation = validateRFC(formData.rfc);
+    if (!rfcValidation.valid) {
+      setAlertMsg({
+        type: "danger",
+        text: rfcValidation.message,
       });
       return;
     }
@@ -158,12 +235,21 @@ const Registro = () => {
                 type="text"
                 name="rfc"
                 className="form-control"
-                placeholder="AAAA123456ABC"
+                placeholder="AAAA12345678"
                 value={formData.rfc}
                 onChange={handleChange}
                 autoComplete="off"
                 disabled={loading}
+                maxLength="12"
               />
+              <small className="form-text text-muted">
+                4 letras + 8 números (ej: XAXX010101000)
+                {formData.rfc && (
+                  <span className={`ms-2 badge ${formData.rfc.length === 12 ? 'bg-success' : 'bg-secondary'}`}>
+                    {formData.rfc.length}/12
+                  </span>
+                )}
+              </small>
             </div>
           </div>
 
