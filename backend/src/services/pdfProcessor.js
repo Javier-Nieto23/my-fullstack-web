@@ -22,13 +22,19 @@ class PDFProcessor {
       const tempDir = '/tmp/pdf-processing';
       await this.ensureDirectoryExists(tempDir);
       
-      const timestamp = Date.now();
+      const timestamp = Date.now() + Math.random().toString(36).substr(2, 9);
       const tempInputFile = path.join(tempDir, `input_${timestamp}.pdf`);
       const tempOutputFile = path.join(tempDir, `output_${timestamp}.pdf`);
 
       // Escribir buffer a archivo temporal
       await fs.writeFile(tempInputFile, inputBuffer);
-      console.log('📝 Archivo temporal creado');
+      console.log(`📝 Archivo temporal creado: ${tempInputFile} (${(inputBuffer.length / 1024).toFixed(2)}KB)`);
+
+      // Verificar que el archivo se escribió correctamente
+      const inputStats = await fs.stat(tempInputFile);
+      if (inputStats.size !== inputBuffer.length) {
+        throw new Error(`Error escribiendo archivo temporal: tamaño esperado ${inputBuffer.length}, encontrado ${inputStats.size}`);
+      }
 
       // 🎯 PROCESAMIENTO SIMPLIFICADO: Solo escala de grises por ahora
       const processResult = await this.simpleGrayscaleOnly(tempInputFile, tempOutputFile);
@@ -108,11 +114,10 @@ class PDFProcessor {
         "-dBATCH",
         "-dSAFER",
 
-        // 🔥 CONVERSIÓN AUTOMÁTICA A ESCALA DE GRISES
+        // 🔥 CONVERSIÓN AUTOMÁTICA A ESCALA DE GRISES (Método corregido)
         "-dProcessColorModel=/DeviceGray",
         "-dColorConversionStrategy=/Gray",
         "-dOverrideICC",                     // ← Ignorar perfiles ICC
-        "-dConvertCMYKImagesToRGB=true",     // ← CMYK → RGB → Gray
 
         // 🔄 CONVERSIÓN AUTOMÁTICA A 300 DPI
         "-r300",
@@ -142,18 +147,46 @@ class PDFProcessor {
       console.log('🔧 Comando Ghostscript (CONVERSIÓN AUTOMÁTICA):', gsCommand);
       
       const startTime = Date.now();
-      const { stdout: gsOutput, stderr: gsError } = await execAsync(gsCommand);
-      const endTime = Date.now();
       
-      if (gsOutput) console.log('📝 Salida GS:', gsOutput);
-      if (gsError) console.log('⚠️ Errores GS:', gsError);
-      
-      console.log(`⏱️ Tiempo de conversión automática: ${((endTime - startTime) / 1000).toFixed(2)}s`);
+      try {
+        const { stdout: gsOutput, stderr: gsError } = await execAsync(gsCommand);
+        const endTime = Date.now();
+        
+        if (gsOutput) console.log('📝 Salida GS:', gsOutput);
+        if (gsError && gsError.trim()) {
+          console.log('⚠️ Mensajes GS:', gsError);
+          // Solo considerar como error si contiene palabras clave de error real
+          if (gsError.toLowerCase().includes('error') || gsError.toLowerCase().includes('failed')) {
+            throw new Error(`Ghostscript error: ${gsError}`);
+          }
+        }
+        
+        console.log(`⏱️ Tiempo de conversión automática: ${((endTime - startTime) / 1000).toFixed(2)}s`);
 
-      // Verificar que el archivo se generó correctamente
-      const stats = await fs.stat(outputPath);
-      if (stats.size === 0) {
-        throw new Error('El archivo procesado está vacío');
+        // Verificar que el archivo se generó correctamente
+        const stats = await fs.stat(outputPath);
+        if (stats.size === 0) {
+          throw new Error('El archivo procesado está vacío');
+        }
+
+        console.log(`📦 Archivo generado: ${(stats.size / 1024).toFixed(2)}KB`);
+        
+      } catch (execError) {
+        const endTime = Date.now();
+        console.error('❌ Error detallado en Ghostscript:');
+        console.error('Comando:', gsCommand);
+        console.error('Error:', execError.message);
+        console.error('Tiempo transcurrido:', `${((endTime - startTime) / 1000).toFixed(2)}s`);
+        
+        // Verificar si el archivo temporal de entrada existe
+        try {
+          const inputStats = await fs.stat(inputPath);
+          console.log(`📄 Archivo de entrada: ${(inputStats.size / 1024).toFixed(2)}KB`);
+        } catch (inputError) {
+          console.error('❌ Archivo de entrada no encontrado:', inputError.message);
+        }
+        
+        throw new Error(`Fallo en conversión Ghostscript: ${execError.message}`);
       }
 
       // 🔍 POST-VALIDACIÓN: Verificar que no quede como página en blanco
