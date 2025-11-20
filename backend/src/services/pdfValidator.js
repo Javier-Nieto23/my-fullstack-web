@@ -256,28 +256,68 @@ class PDFValidator {
    * 🔍 Detectar páginas en blanco (posible contenido OCR)
    */
   async detectBlankPages(filePath, results) {
+    console.log('📝 Intentando extraer texto del PDF...');
+    
+    let textContent = '';
+    let extractionMethod = 'none';
+
+    // 🔄 Método 1: Intentar con pdftotext (más confiable)
     try {
-      // Extraer texto de cada página
-      const { stdout } = await execAsync(`mutool draw -t "${filePath}"`);
+      const { stdout } = await execAsync(`pdftotext "${filePath}" -`);
+      textContent = stdout.trim();
+      extractionMethod = 'pdftotext';
+      console.log(`✅ Texto extraído con pdftotext (${textContent.length} caracteres)`);
+    } catch (error) {
+      console.log('⚠️ pdftotext no disponible, intentando con mutool...');
       
-      const textLength = stdout.trim().length;
+      // 🔄 Método 2: Intentar con mutool (método alternativo)
+      try {
+        const { stdout } = await execAsync(`mutool draw -F txt -o - "${filePath}"`);
+        textContent = stdout.trim();
+        extractionMethod = 'mutool-txt';
+        console.log(`✅ Texto extraído con mutool-txt (${textContent.length} caracteres)`);
+      } catch (mutoolError) {
+        console.log('⚠️ mutool txt no disponible, usando análisis básico...');
+        
+        // 🔄 Método 3: Solo análisis básico sin extracción de texto
+        try {
+          const { stdout } = await execAsync(`pdfinfo "${filePath}"`);
+          if (stdout.includes('Pages:')) {
+            extractionMethod = 'basic-info';
+            console.log('✅ Información básica del PDF disponible');
+          }
+        } catch (basicError) {
+          console.log('❌ No se puede analizar el PDF con ningún método');
+          results.warnings.push('No se pudo extraer información de texto del PDF');
+          return;
+        }
+      }
+    }
+
+    // 📊 Análizar contenido de texto si se obtuvo
+    if (textContent.length > 0) {
       const pageCount = results.metadata.pages || 1;
-      const avgTextPerPage = textLength / pageCount;
+      const avgTextPerPage = textContent.length / pageCount;
+
+      console.log(`📊 Análisis de texto: ${textContent.length} caracteres total, ~${Math.round(avgTextPerPage)} por página`);
 
       // Si hay muy poco texto, podría ser OCR o páginas escaneadas
-      if (avgTextPerPage < 50) { // Menos de 50 caracteres por página
+      if (avgTextPerPage < 50) {
         results.hasOCR = true;
         results.warnings.push('PDF parece contener páginas escaneadas o con poco texto (posible OCR)');
       }
 
       // Detectar páginas completamente vacías
-      if (textLength === 0) {
+      if (textContent.length === 0) {
         results.hasBlankPages = true;
         results.warnings.push('PDF parece contener solo páginas en blanco o imágenes');
+      } else {
+        console.log(`✅ PDF contiene texto suficiente (${textContent.length} caracteres)`);
       }
-
-    } catch (error) {
-      console.log('⚠️ No se pudo analizar texto del PDF:', error.message);
+    } else if (extractionMethod === 'basic-info') {
+      // Si solo tenemos info básica, asumimos que el PDF tiene contenido
+      console.log('ℹ️ Usando análisis básico - asumiendo PDF con contenido');
+      results.warnings.push('Análisis de texto limitado - usando validación básica');
     }
   }
 
@@ -285,38 +325,48 @@ class PDFValidator {
    * 🔍 Analizar contenido de texto
    */
   async analyzeTextContent(filePath, results) {
+    console.log('🔍 Analizando contenido de texto...');
+    
+    let text = '';
+
+    // 🔄 Intentar múltiples métodos para extraer texto
     try {
-      // Extraer texto completo
+      // Método 1: pdftotext (más confiable para análisis)
       const { stdout } = await execAsync(`pdftotext "${filePath}" -`);
-      
-      const text = stdout.toLowerCase();
-      
-      // Buscar patrones de código
-      const codePatterns = [
-        'function(',
-        'var ',
-        'const ',
-        'let ',
-        'if (',
-        'for (',
-        'while (',
-        'class ',
-        '<?php',
-        '<script',
-        'console.log',
-        'document.',
-        'window.'
-      ];
-
-      const foundCodePatterns = codePatterns.filter(pattern => text.includes(pattern));
-      
-      if (foundCodePatterns.length > 2) {
-        results.warnings.push(`PDF parece contener código: ${foundCodePatterns.slice(0, 3).join(', ')}`);
-      }
-
+      text = stdout.toLowerCase();
+      console.log(`✅ Texto extraído para análisis (${text.length} caracteres)`);
     } catch (error) {
-      console.log('⚠️ No se pudo extraer texto del PDF:', error.message);
+      console.log('⚠️ No se pudo extraer texto para análisis detallado');
+      // Si no podemos extraer texto, asumimos que está limpio
+      return;
     }
+
+    // 📊 Análisis de contenido problemático
+    
+    // Buscar patrones de código
+    const codePatterns = [
+      'function(',
+      'var ',
+      'const ',
+      'let ',
+      'if (',
+      'for (',
+      'while (',
+      'class ',
+      '<?php',
+      '<script',
+      'console.log',
+      'document.',
+      'window.'
+    ];
+
+    const foundCodePatterns = codePatterns.filter(pattern => text.includes(pattern));
+    
+    if (foundCodePatterns.length > 2) {
+      results.warnings.push(`PDF parece contener código: ${foundCodePatterns.slice(0, 3).join(', ')}`);
+    }
+
+    console.log('✅ Análisis de contenido de texto completado');
   }
 
   /**
