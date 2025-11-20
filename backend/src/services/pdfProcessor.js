@@ -59,10 +59,10 @@ class PDFProcessor {
    * Paso a paso - implementación básica y robusta
    */
   async simpleGrayscaleOnly(inputPath, outputPath) {
-    console.log('🎯 Convirtiendo a escala de grises (método simplificado)...');
+    console.log('🎯 Convirtiendo a escala de grises con 300 DPI (método mejorado)...');
 
     try {
-      // Comando Ghostscript para conversión básica a escala de grises
+      // Comando Ghostscript MEJORADO para conversión completa
       const gsCommand = [
         'gs',
         '-sDEVICE=pdfwrite',
@@ -72,11 +72,19 @@ class PDFProcessor {
         '-sColorConversionStrategy=Gray',     // Convertir a escala de grises
         '-dProcessColorModel=/DeviceGray',    // Forzar modelo de color gris
         '-dCompatibilityLevel=1.4',           // PDF estándar compatible
+        '-dColorImageResolution=300',         // FORZAR 300 DPI en imágenes de color
+        '-dGrayImageResolution=300',          // FORZAR 300 DPI en imágenes grises
+        '-dMonoImageResolution=300',          // FORZAR 300 DPI en imágenes mono
+        '-dDownsampleColorImages=false',      // NO reducir resolución
+        '-dDownsampleGrayImages=false',       // NO reducir resolución
+        '-dDownsampleMonoImages=false',       // NO reducir resolución
+        '-dColorImageDepth=8',                // Forzar 8 bits por canal
+        '-dGrayImageDepth=8',                 // Forzar 8 bits para grises
         `-sOutputFile=${outputPath}`,
         inputPath
       ].join(' ');
 
-      console.log('🔄 Ejecutando conversión Ghostscript...');
+      console.log('🔄 Ejecutando conversión Ghostscript con 300 DPI...');
       await execAsync(gsCommand);
 
       // Verificar que el archivo se generó correctamente
@@ -85,7 +93,7 @@ class PDFProcessor {
         throw new Error('El archivo procesado está vacío');
       }
 
-      console.log(`✅ Conversión completada - Tamaño: ${(stats.size / 1024).toFixed(2)}KB`);
+      console.log(`✅ Conversión con 300 DPI completada - Tamaño: ${(stats.size / 1024).toFixed(2)}KB`);
       return { success: true };
 
     } catch (error) {
