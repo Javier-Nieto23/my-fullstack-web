@@ -62,7 +62,16 @@ class PDFProcessor {
     console.log('🎯 Convirtiendo a escala de grises con 300 DPI (método mejorado)...');
 
     try {
-      // Comando Ghostscript MEJORADO para conversión completa
+      // 🔍 DIAGNÓSTICO ANTES: Ver imágenes originales
+      console.log('🔍 DIAGNÓSTICO ANTES de conversión:');
+      try {
+        const { stdout: beforeImages } = await execAsync(`pdfimages -list "${inputPath}"`);
+        console.log('📊 Imágenes ANTES:\n', beforeImages);
+      } catch (err) {
+        console.log('⚠️ No se pudo analizar imágenes originales:', err.message);
+      }
+
+      // Comando Ghostscript MÁS AGRESIVO para conversión completa
       const gsCommand = [
         'gs',
         '-sDEVICE=pdfwrite',
@@ -80,17 +89,35 @@ class PDFProcessor {
         '-dDownsampleMonoImages=false',       // NO reducir resolución
         '-dColorImageDepth=8',                // Forzar 8 bits por canal
         '-dGrayImageDepth=8',                 // Forzar 8 bits para grises
+        '-dAutoRotatePages=/None',            // No rotar páginas
+        '-dEmbedAllFonts=true',               // Embebear fuentes
+        '-dSubsetFonts=true',                 // Subconjunto de fuentes
+        '-dCompressFonts=true',               // Comprimir fuentes
+        '-dDetectDuplicateImages=true',       // Detectar imágenes duplicadas
         `-sOutputFile=${outputPath}`,
         inputPath
       ].join(' ');
 
       console.log('🔄 Ejecutando conversión Ghostscript con 300 DPI...');
-      await execAsync(gsCommand);
+      console.log('🔧 Comando:', gsCommand);
+      
+      const { stdout: gsOutput, stderr: gsError } = await execAsync(gsCommand);
+      if (gsOutput) console.log('📝 Salida GS:', gsOutput);
+      if (gsError) console.log('⚠️ Errores GS:', gsError);
 
       // Verificar que el archivo se generó correctamente
       const stats = await fs.stat(outputPath);
       if (stats.size === 0) {
         throw new Error('El archivo procesado está vacío');
+      }
+
+      // 🔍 DIAGNÓSTICO DESPUÉS: Ver imágenes procesadas
+      console.log('🔍 DIAGNÓSTICO DESPUÉS de conversión:');
+      try {
+        const { stdout: afterImages } = await execAsync(`pdfimages -list "${outputPath}"`);
+        console.log('📊 Imágenes DESPUÉS:\n', afterImages);
+      } catch (err) {
+        console.log('⚠️ No se pudo analizar imágenes procesadas:', err.message);
       }
 
       console.log(`✅ Conversión con 300 DPI completada - Tamaño: ${(stats.size / 1024).toFixed(2)}KB`);
