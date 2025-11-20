@@ -180,7 +180,8 @@ app.get('/api/test', (req, res) => {
 
 // Middleware para verificar token
 const verifyToken = (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1]
+  // Buscar token en header Authorization o query param
+  let token = req.headers.authorization?.split(' ')[1] || req.query.token
   
   if (!token) {
     return res.status(401).json({ error: 'Token no proporcionado' })
@@ -290,7 +291,7 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
       })
     }
 
-    // 4️⃣ SUBIR A CLOUDFLARE R2 (PDF final)
+    // 4️⃣ SUBIR A CLOUDFLARE R2 (PDF final) 
     const fileName = wasProcessed ? `processed_${originalname}` : originalname;
     console.log(`🌩️ Subiendo a Cloudflare R2: ${fileName}`)
     const uploadResult = await r2Service.uploadFile(finalBuffer, fileName, mimetype)
@@ -537,15 +538,17 @@ app.get('/api/documents/:id/view', verifyToken, async (req, res) => {
         'Content-Disposition': `inline; filename="${document.originalName}"`,
         'Cache-Control': 'public, max-age=3600',
         'Accept-Ranges': 'bytes'
-      })
+      });
       
-      // Enviar el archivo PDF directamente
-      const pdfBuffer = await response.buffer()
-      res.send(pdfBuffer)
+      console.log(`📄 Sirviendo PDF desde R2: ${document.filePath}`);
+      
+      // Leer y enviar el archivo PDF
+      const pdfBuffer = await response.buffer();
+      res.send(pdfBuffer);
       
     } catch (r2Error) {
-      console.error('Error obteniendo archivo de R2:', r2Error)
-      res.status(500).json({ error: 'Error al acceder al archivo: ' + r2Error.message })
+      console.error('Error obteniendo archivo de R2:', r2Error);
+      res.status(500).json({ error: 'Error al acceder al archivo: ' + r2Error.message });
     }
 
   } catch (error) {

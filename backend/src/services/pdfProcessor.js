@@ -171,6 +171,37 @@ class PDFProcessor {
 
         console.log(`📦 Archivo generado: ${(stats.size / 1024).toFixed(2)}KB`);
         
+        // 🔍 POST-VALIDACIÓN: Verificar que no quede como página en blanco
+        try {
+          const { stdout: finalText } = await execAsync(`pdftotext "${outputPath}" -`);
+          if (finalText.trim().length < 5) {
+            console.log('⚠️ ADVERTENCIA: PDF procesado tiene muy poco texto visible');
+          } else {
+            console.log('✅ PDF procesado mantiene contenido de texto');
+          }
+        } catch (err) {
+          console.log('⚠️ No se pudo verificar texto final:', err.message);
+        }
+
+        // 🔍 DIAGNÓSTICO DESPUÉS: Ver imágenes procesadas
+        console.log('🔍 DIAGNÓSTICO DESPUÉS de conversión automática:');
+        try {
+          const { stdout: afterImages } = await execAsync(`pdfimages -list "${outputPath}"`);
+          console.log('📊 Imágenes DESPUÉS (AUTOMÁTICO):\n', afterImages);
+          
+          // Verificar que se aplicó la conversión
+          if (afterImages.includes('color') && !afterImages.includes('gray')) {
+            console.log('⚠️ ADVERTENCIA: Algunas imágenes podrían seguir en color');
+          } else {
+            console.log('✅ CONVERSIÓN EXITOSA: Imágenes convertidas a escala de grises');
+          }
+        } catch (err) {
+          console.log('⚠️ No se pudo analizar imágenes procesadas:', err.message);
+        }
+
+        console.log(`✅ ¡CONVERSIÓN AUTOMÁTICA COMPLETA! - Tamaño final: ${(stats.size / 1024).toFixed(2)}KB`);
+        return { success: true };
+        
       } catch (execError) {
         const endTime = Date.now();
         console.error('❌ Error detallado en Ghostscript:');
@@ -188,37 +219,6 @@ class PDFProcessor {
         
         throw new Error(`Fallo en conversión Ghostscript: ${execError.message}`);
       }
-
-      // 🔍 POST-VALIDACIÓN: Verificar que no quede como página en blanco
-      try {
-        const { stdout: finalText } = await execAsync(`pdftotext "${outputPath}" -`);
-        if (finalText.trim().length < 5) {
-          console.log('⚠️ ADVERTENCIA: PDF procesado tiene muy poco texto visible');
-        } else {
-          console.log('✅ PDF procesado mantiene contenido de texto');
-        }
-      } catch (err) {
-        console.log('⚠️ No se pudo verificar texto final:', err.message);
-      }
-
-      // 🔍 DIAGNÓSTICO DESPUÉS: Ver imágenes procesadas
-      console.log('🔍 DIAGNÓSTICO DESPUÉS de conversión automática:');
-      try {
-        const { stdout: afterImages } = await execAsync(`pdfimages -list "${outputPath}"`);
-        console.log('📊 Imágenes DESPUÉS (AUTOMÁTICO):\n', afterImages);
-        
-        // Verificar que se aplicó la conversión
-        if (afterImages.includes('color') && !afterImages.includes('gray')) {
-          console.log('⚠️ ADVERTENCIA: Algunas imágenes podrían seguir en color');
-        } else {
-          console.log('✅ CONVERSIÓN EXITOSA: Imágenes convertidas a escala de grises');
-        }
-      } catch (err) {
-        console.log('⚠️ No se pudo analizar imágenes procesadas:', err.message);
-      }
-
-      console.log(`✅ ¡CONVERSIÓN AUTOMÁTICA COMPLETA! - Tamaño final: ${(stats.size / 1024).toFixed(2)}KB`);
-      return { success: true };
 
     } catch (error) {
       console.error('❌ Error en conversión automática:', error);

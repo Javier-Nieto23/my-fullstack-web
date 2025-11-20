@@ -1,8 +1,28 @@
 FROM node:20-alpine
 WORKDIR /app
 
-# Instalar dependencias necesarias para Prisma
-RUN apk add --no-cache openssl
+# 📦 INSTALAR HERRAMIENTAS PDF Y DEPENDENCIAS ESENCIALES
+RUN apk add --no-cache \
+    # Dependencias básicas
+    openssl \
+    curl \
+    bash \
+    # 🎨 Ghostscript (conversión PDF)
+    ghostscript \
+    # 📄 Poppler tools (análisis PDF)
+    poppler-utils \
+    # 🔧 MuPDF tools (validación PDF)
+    mupdf-tools \
+    # 📊 ImageMagick (procesamiento imagen)
+    imagemagick \
+    && echo "✅ Todas las herramientas PDF instaladas"
+
+# 🔧 Verificar instalación de herramientas
+RUN echo "🔍 Verificando herramientas PDF instaladas:" && \
+    gs --version && echo "✅ Ghostscript OK" && \
+    pdfinfo -v && echo "✅ Poppler-utils OK" && \
+    mutool -v && echo "✅ MuPDF OK" && \
+    convert -version | head -2 && echo "✅ ImageMagick OK"
 
 # Copiar archivos de dependencias del backend
 COPY backend/package*.json ./

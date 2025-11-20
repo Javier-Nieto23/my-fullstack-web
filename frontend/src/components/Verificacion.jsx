@@ -4,8 +4,10 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
 import "../css/pag_verificacion.css";
 import "../css/login.css";
+import "../css/documentos.css";
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import DocumentosProcesados from './DocumentosProcesados';
 
 const Verificacion = () => {
   const navigate = useNavigate()
@@ -32,6 +34,9 @@ const Verificacion = () => {
 
   // Estados para visualización de PDF
   const [viewingPdf, setViewingPdf] = useState(null)
+  
+  // Estado para controlar qué vista mostrar
+  const [activeTab, setActiveTab] = useState('upload') // 'upload' o 'documents'
 
   // ===========================================
   // AUTENTICACIÓN Y INICIALIZACIÓN
@@ -426,7 +431,46 @@ const Verificacion = () => {
         </div>
       </div>
 
-      {/* Contenido principal */}
+      {/* Navegación por tabs */}
+      <div className="container-fluid" style={{ maxWidth: "1200px", margin: "0 auto" }}>
+        <div className="card mb-4">
+          <div className="card-header p-0">
+            <ul className="nav nav-tabs card-header-tabs">
+              <li className="nav-item">
+                <button 
+                  className={`nav-link ${activeTab === 'upload' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('upload')}
+                  style={{
+                    border: 'none',
+                    background: activeTab === 'upload' ? '#fff' : 'transparent',
+                    color: activeTab === 'upload' ? '#0b2d50' : '#666'
+                  }}
+                >
+                  <i className="bi bi-cloud-arrow-up me-2"></i>
+                  Subir Documentos
+                </button>
+              </li>
+              <li className="nav-item">
+                <button 
+                  className={`nav-link ${activeTab === 'documents' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('documents')}
+                  style={{
+                    border: 'none',
+                    background: activeTab === 'documents' ? '#fff' : 'transparent',
+                    color: activeTab === 'documents' ? '#0b2d50' : '#666'
+                  }}
+                >
+                  <i className="bi bi-file-earmark-text me-2"></i>
+                  Documentos Procesados
+                </button>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      {/* Contenido condicional según tab activo */}
+      {activeTab === 'upload' && (
       <div className="container-fluid py-4" style={{ maxWidth: "1200px", margin: "0 auto" }}>
         {/* Section 1: Upload + Status Cards - FUSIÓN INTELIGENTE */}
         <div className="row mb-4">
@@ -769,6 +813,14 @@ const Verificacion = () => {
           </div>
         )}
       </div>
+      )}
+      
+      {/* Tab de Documentos Procesados */}
+      {activeTab === 'documents' && (
+        <div className="container-fluid" style={{ maxWidth: "1200px", margin: "0 auto" }}>
+          <DocumentosProcesados />
+        </div>
+      )}
 
       {/* Modal PDF Viewer - Backend Documents */}
       {viewingPdf && (
