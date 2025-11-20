@@ -30,13 +30,8 @@ const Verificacion = () => {
     misEmpresas: 0
   })
 
-  // Estados para conversión PDF (funcionalidad de Joel integrada)
+  // Estados para visualización de PDF
   const [viewingPdf, setViewingPdf] = useState(null)
-  const [convertedPdfs, setConvertedPdfs] = useState([]) // PDFs convertidos localmente
-  
-  // Estados adicionales para el viewer mejorado
-  const [showAdvancedViewer, setShowAdvancedViewer] = useState(false)
-  const [currentViewingDoc, setCurrentViewingDoc] = useState(null)
 
   // ===========================================
   // AUTENTICACIÓN Y INICIALIZACIÓN
@@ -189,121 +184,21 @@ const Verificacion = () => {
   const showUploadConfirmation = async (files) => {
     const result = await Swal.fire({
       title: 'Procesar Archivos',
-      text: `Se han seleccionado ${files.length} archivo(s) PDF`,
+      text: `Se procesarán ${files.length} archivo(s) PDF con validaciones Ghostscript`,
       icon: 'info',
       showCancelButton: true,
-      showDenyButton: true,
-      confirmButtonText: 'Subir al Backend',
-      denyButtonText: 'Convertir Localmente',
+      confirmButtonText: 'Procesar con Backend',
       cancelButtonText: 'Cancelar',
-      confirmButtonColor: '#0d6efd',
-      denyButtonColor: '#6f42c1'
+      confirmButtonColor: '#0d6efd'
     })
 
     if (result.isConfirmed) {
       await uploadFilesToBackend(files)
-    } else if (result.isDenied) {
-      await convertFilesLocally(files)
     }
   }
 
-  // ===========================================
-  // CONVERSIÓN LOCAL DE PDFS (Funcionalidad de Joel)
-  // ===========================================
-  
-  const convertFilesLocally = async (files) => {
-    setUploading(true)
-    
-    for (let file of files) {
-      const validation = validateFile(file)
-      if (!validation.valid) {
-        Swal.fire('Error', validation.error, 'error')
-        continue
-      }
 
-      const tempId = Date.now() + Math.random()
-      setProcessing(prev => [...prev, { id: tempId, name: file.name, progress: 0 }])
 
-      try {
-        await convertSinglePDF(file, tempId)
-      } catch (error) {
-        console.error('Error en conversión local:', error)
-        setProcessing(prev => prev.filter(p => p.id !== tempId))
-        Swal.fire('Error', `Error al convertir ${file.name}`, 'error')
-      }
-    }
-
-    setUploading(false)
-    setSelectedFiles([])
-  }
-
-  const convertSinglePDF = async (file, tempId) => {
-    const swalLoading = Swal.fire({
-      title: "Convirtiendo PDF...",
-      text: `Procesando ${file.name} con IA`,
-      allowOutsideClick: false,
-      didOpen: () => {
-        Swal.showLoading();
-      },
-      showConfirmButton: false,
-    });
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    // Simular progreso
-    const progressInterval = setInterval(() => {
-      setProcessing(prev => 
-        prev.map(p => p.id === tempId ? { ...p, progress: Math.min(p.progress + 15, 90) } : p)
-      )
-    }, 500)
-
-    try {
-      const response = await axios.post(`${PYTHON_SERVICE_URL}/convertir_pdf`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-        responseType: "blob",
-        timeout: 60000 // 60 segundos para conversión
-      });
-
-      clearInterval(progressInterval)
-      const convertedPdfBlob = response.data;
-      const url = URL.createObjectURL(convertedPdfBlob);
-
-      const newConvertedDoc = {
-        id: tempId,
-        url: url,
-        fecha: new Date().toLocaleString("es-MX"),
-        nombre: file.name,
-        tipo: 'convertido_local',
-        size: file.size,
-        originalFile: file
-      };
-
-      setConvertedPdfs(prev => [newConvertedDoc, ...prev])
-      setProcessing(prev => 
-        prev.map(p => p.id === tempId ? { ...p, progress: 100 } : p)
-      )
-
-      swalLoading.close();
-      
-      Swal.fire({
-        icon: "success",
-        title: "¡Conversión exitosa!",
-        text: `${file.name} ha sido convertido exitosamente.`,
-        showConfirmButton: true,
-        confirmButtonText: "Ver PDF"
-      });
-
-      setTimeout(() => {
-        setProcessing(prev => prev.filter(p => p.id !== tempId))
-      }, 2000)
-
-    } catch (error) {
-      clearInterval(progressInterval)
-      swalLoading.close();
-      throw error;
-    }
-  }
 
   // ===========================================
   // UPLOAD AL BACKEND (Tu implementación moderna)
@@ -502,11 +397,6 @@ const Verificacion = () => {
     setViewingPdf(null)
   }
 
-  const viewConvertedPdf = (doc) => {
-    setCurrentViewingDoc(doc)
-    setShowAdvancedViewer(true)
-  }
-
   if (checking) return null
   
   return (
@@ -548,8 +438,8 @@ const Verificacion = () => {
                   <i className="bi bi-cloud-arrow-up"></i>
                 </div>
                 <div>
-                  <h5 className="mb-0">Subir & Convertir PDF</h5>
-                  <small className="text-muted">Backend Storage + Conversión Local con IA</small>
+                  <h5 className="mb-0">Subir & Procesar PDF</h5>
+                  <small className="text-muted">Validación y Conversión con Ghostscript</small>
                 </div>
               </div>
               
@@ -614,11 +504,11 @@ const Verificacion = () => {
                 </div>
                 <div className="col-6">
                   <button 
-                    className="btn btn-info w-100" 
+                    className="btn btn-success w-100" 
                     disabled={selectedFiles.length === 0}
                     onClick={() => showUploadConfirmation(selectedFiles)}
                   >
-                    <i className="bi bi-magic me-2"></i>
+                    <i className="bi bi-gear me-2"></i>
                     Procesar
                   </button>
                 </div>
@@ -695,16 +585,16 @@ const Verificacion = () => {
                   </div>
                 </div>
               </div>
-              {/* PDFs Convertidos Localmente */}
+              {/* Mis Empresas */}
               <div className="col-12">
                 <div className="card p-3" style={{ borderLeft: "4px solid #e83e8c" }}>
                   <div className="d-flex align-items-center">
                     <div style={{ fontSize: "1.8rem", color: "#e83e8c", marginRight: "15px" }}>
-                      <i className="bi bi-magic"></i>
+                      <i className="bi bi-building"></i>
                     </div>
                     <div>
-                      <small className="text-muted d-block">CONVERTIDOS LOCAL</small>
-                      <h4 className="mb-0">{convertedPdfs.length}</h4>
+                      <small className="text-muted d-block">MIS EMPRESAS</small>
+                      <h4 className="mb-0">{metrics.misEmpresas}</h4>
                     </div>
                   </div>
                 </div>
@@ -739,14 +629,14 @@ const Verificacion = () => {
           </div>
         </div>
 
-        {/* Section 3: Documentos del Backend */}
+        {/* Section 3: Documentos Procesados */}
         <div className="card mb-4">
           <div className="card-header" style={{ background: "linear-gradient(90deg, #17a2b8 0%, #20c997 100%)", color: "white" }}>
             <div className="d-flex align-items-center gap-2">
-              <i className="bi bi-cloud-check" style={{ fontSize: "1.5rem" }}></i>
+              <i className="bi bi-files" style={{ fontSize: "1.5rem" }}></i>
               <div>
-                <h6 className="mb-0">Documentos del Backend ({documents.length})</h6>
-                <small>Almacenados en el servidor</small>
+                <h6 className="mb-0">Documentos Procesados ({documents.length})</h6>
+                <small>Validados y convertidos con Ghostscript</small>
               </div>
             </div>
           </div>
@@ -754,10 +644,10 @@ const Verificacion = () => {
             {documents.length === 0 ? (
               <div className="text-center py-4">
                 <div style={{ fontSize: "2.5rem", color: "#ccc", marginBottom: "15px" }}>
-                  <i className="bi bi-cloud"></i>
+                  <i className="bi bi-files"></i>
                 </div>
-                <p className="text-muted mb-1">No hay documentos en el backend</p>
-                <small className="text-muted">Los archivos se mostrarán aquí después de subirlos</small>
+                <p className="text-muted mb-1">No hay documentos procesados</p>
+                <small className="text-muted">Los archivos aparecerán aquí después de procesarlos con Ghostscript</small>
               </div>
             ) : (
               <div className="table-responsive">
@@ -766,7 +656,7 @@ const Verificacion = () => {
                     <tr>
                       <th>Documento</th>
                       <th>Estado</th>
-                      <th>Empresa</th>
+                      <th>Tipo</th>
                       <th>Fecha</th>
                       <th>Tamaño</th>
                       <th>Acciones</th>
@@ -802,7 +692,11 @@ const Verificacion = () => {
                             </span>
                           )}
                         </td>
-                        <td>{doc.company}</td>
+                        <td>
+                          <span className="badge bg-primary">
+                            <i className="bi bi-gear me-1"></i>Ghostscript
+                          </span>
+                        </td>
                         <td>{new Date(doc.uploadDate).toLocaleDateString('es-ES')}</td>
                         <td>{(doc.size / 1024 / 1024).toFixed(2)} MB</td>
                         <td>
@@ -832,59 +726,44 @@ const Verificacion = () => {
           </div>
         </div>
 
-        {/* Section 4: PDFs Convertidos Localmente */}
-        {convertedPdfs.length > 0 && (
+        {/* Section 4: Estadísticas Rápidas */}
+        {documents.length > 0 && (
           <div className="card">
             <div className="card-header" style={{ background: "linear-gradient(90deg, #6f42c1 0%, #e83e8c 100%)", color: "white" }}>
               <div className="d-flex align-items-center gap-2">
-                <i className="bi bi-magic" style={{ fontSize: "1.5rem" }}></i>
+                <i className="bi bi-graph-up" style={{ fontSize: "1.5rem" }}></i>
                 <div>
-                  <h6 className="mb-0">PDFs Convertidos Localmente ({convertedPdfs.length})</h6>
-                  <small>Procesados con IA local</small>
+                  <h6 className="mb-0">Resumen de Procesamiento</h6>
+                  <small>Estadísticas de documentos procesados con Ghostscript</small>
                 </div>
               </div>
             </div>
             <div className="card-body">
               <div className="row g-3">
-                {convertedPdfs.map(doc => (
-                  <div key={doc.id} className="col-md-6 col-lg-4">
-                    <div className="card h-100 border-0 shadow-sm">
-                      <div className="card-body d-flex flex-column">
-                        <div className="d-flex align-items-center mb-3">
-                          <div className="bg-gradient p-2 rounded me-3" style={{background: 'linear-gradient(45deg, #6f42c1, #e83e8c)'}}>
-                            <i className="bi bi-file-pdf text-white" style={{fontSize: '1.5rem'}}></i>
-                          </div>
-                          <div className="flex-grow-1">
-                            <h6 className="card-title mb-1 text-truncate">{doc.nombre}</h6>
-                            <small className="text-muted">{doc.fecha}</small>
-                          </div>
-                        </div>
-                        
-                        <div className="mt-auto">
-                          <div className="d-flex gap-2">
-                            <button 
-                              className="btn btn-primary btn-sm flex-fill"
-                              onClick={() => viewConvertedPdf(doc)}
-                            >
-                              <i className="bi bi-eye me-1"></i>Ver
-                            </button>
-                            <button 
-                              className="btn btn-success btn-sm flex-fill"
-                              onClick={() => {
-                                const link = document.createElement('a')
-                                link.href = doc.url
-                                link.download = doc.nombre
-                                link.click()
-                              }}
-                            >
-                              <i className="bi bi-download me-1"></i>Descargar
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                <div className="col-md-3">
+                  <div className="text-center p-3 bg-light rounded">
+                    <div className="h4 text-primary mb-1">{documents.length}</div>
+                    <small className="text-muted">Total Documentos</small>
                   </div>
-                ))}
+                </div>
+                <div className="col-md-3">
+                  <div className="text-center p-3 bg-light rounded">
+                    <div className="h4 text-success mb-1">{documents.filter(d => d.status === 'processed').length}</div>
+                    <small className="text-muted">Procesados</small>
+                  </div>
+                </div>
+                <div className="col-md-3">
+                  <div className="text-center p-3 bg-light rounded">
+                    <div className="h4 text-info mb-1">{documents.filter(d => d.status === 'sent').length}</div>
+                    <small className="text-muted">Enviados</small>
+                  </div>
+                </div>
+                <div className="col-md-3">
+                  <div className="text-center p-3 bg-light rounded">
+                    <div className="h4 text-danger mb-1">{documents.filter(d => d.status === 'non_compliant').length}</div>
+                    <small className="text-muted">No Cumplidos</small>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -931,45 +810,7 @@ const Verificacion = () => {
         </div>
       )}
 
-      {/* Modal PDF Viewer Avanzado - Converted Documents */}
-      {showAdvancedViewer && currentViewingDoc && (
-        <div className="modal fade show" style={{display: 'block', backgroundColor: 'rgba(0,0,0,0.8)'}} onClick={() => setShowAdvancedViewer(false)}>
-          <div className="modal-dialog modal-fullscreen" onClick={e => e.stopPropagation()}>
-            <div className="modal-content">
-              <div className="modal-header bg-dark text-white">
-                <h5 className="modal-title">
-                  <i className="bi bi-magic text-warning me-2"></i>
-                  {currentViewingDoc.nombre} - Convertido con IA
-                </h5>
-                <button type="button" className="btn-close btn-close-white" onClick={() => setShowAdvancedViewer(false)}></button>
-              </div>
-              <div className="modal-body p-0">
-                <iframe
-                  src={currentViewingDoc.url}
-                  style={{width: '100%', height: '90vh', border: 'none'}}
-                  title="PDF Convertido"
-                />
-              </div>
-              <div className="modal-footer bg-dark">
-                <button className="btn btn-secondary" onClick={() => setShowAdvancedViewer(false)}>
-                  Cerrar
-                </button>
-                <button 
-                  className="btn btn-success"
-                  onClick={() => {
-                    const link = document.createElement('a')
-                    link.href = currentViewingDoc.url
-                    link.download = currentViewingDoc.nombre
-                    link.click()
-                  }}
-                >
-                  <i className="bi bi-download me-1"></i>Descargar PDF Convertido
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       <footer className="text-center py-3">
         © 2025 SEER Tráfico S.C. — Portal de Carga de Información
