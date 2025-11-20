@@ -71,7 +71,7 @@ class PDFProcessor {
         console.log('⚠️ No se pudo analizar imágenes originales:', err.message);
       }
 
-      // Comando Ghostscript MÁS AGRESIVO para conversión completa
+      // Comando Ghostscript AGRESIVO para FORZAR upscaling a 300 DPI
       const gsCommand = [
         'gs',
         '-sDEVICE=pdfwrite',
@@ -81,12 +81,18 @@ class PDFProcessor {
         '-sColorConversionStrategy=Gray',     // Convertir a escala de grises
         '-dProcessColorModel=/DeviceGray',    // Forzar modelo de color gris
         '-dCompatibilityLevel=1.4',           // PDF estándar compatible
-        '-dColorImageResolution=300',         // FORZAR 300 DPI en imágenes de color
-        '-dGrayImageResolution=300',          // FORZAR 300 DPI en imágenes grises
-        '-dMonoImageResolution=300',          // FORZAR 300 DPI en imágenes mono
-        '-dDownsampleColorImages=false',      // NO reducir resolución
-        '-dDownsampleGrayImages=false',       // NO reducir resolución
-        '-dDownsampleMonoImages=false',       // NO reducir resolución
+        '-dColorImageResolution=300',         // OBJETIVO: 300 DPI en imágenes color
+        '-dGrayImageResolution=300',          // OBJETIVO: 300 DPI en imágenes grises
+        '-dMonoImageResolution=300',          // OBJETIVO: 300 DPI en imágenes mono
+        '-dDownsampleColorImages=true',       // HABILITAR resampling para upscaling
+        '-dDownsampleGrayImages=true',        // HABILITAR resampling para upscaling
+        '-dDownsampleMonoImages=true',        // HABILITAR resampling para upscaling
+        '-dColorImageDownsampleType=/Bicubic', // Usar interpolación bicúbica
+        '-dGrayImageDownsampleType=/Bicubic',  // Usar interpolación bicúbica
+        '-dMonoImageDownsampleType=/Bicubic',  // Usar interpolación bicúbica
+        '-dColorImageDownsampleThreshold=1.0', // Threshold para forzar resampling
+        '-dGrayImageDownsampleThreshold=1.0',  // Threshold para forzar resampling
+        '-dMonoImageDownsampleThreshold=1.0',  // Threshold para forzar resampling
         '-dColorImageDepth=8',                // Forzar 8 bits por canal
         '-dGrayImageDepth=8',                 // Forzar 8 bits para grises
         '-dAutoRotatePages=/None',            // No rotar páginas
