@@ -25,7 +25,14 @@ class CloudflareR2Service {
    * @returns {Promise<{key: string, url: string}>}
    */
   async uploadFile(fileBuffer, fileName, mimeType = 'application/pdf') {
+    console.log(`🌩️ [R2] Iniciando subida: ${fileName} (${(fileBuffer.length / 1024).toFixed(2)} KB)`);
+    
     try {
+      // Verificar configuración
+      if (!this.isConfigured()) {
+        throw new Error('Cloudflare R2 no está configurado correctamente');
+      }
+
       // Generar key único para el archivo
       const fileExtension = fileName.split('.').pop()
       const uniqueId = crypto.randomUUID()
@@ -44,11 +51,15 @@ class CloudflareR2Service {
       })
 
       await this.client.send(command)
+      
+      console.log(`✅ [R2] Archivo subido exitosamente: ${key}`);
 
       // URL pública (si tienes dominio personalizado configurado)
       const publicUrl = this.customDomain 
         ? `https://${this.customDomain}/${key}`
         : await this.getSignedViewUrl(key)
+
+      console.log(`🔗 [R2] URL generada: ${publicUrl ? 'OK' : 'ERROR'}`);
 
       return {
         key,
@@ -56,7 +67,7 @@ class CloudflareR2Service {
         success: true
       }
     } catch (error) {
-      console.error('Error uploading to R2:', error)
+      console.error('❌ [R2] Error uploading to R2:', error)
       throw new Error(`Error al subir archivo: ${error.message}`)
     }
   }

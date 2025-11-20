@@ -217,6 +217,18 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
     const { originalname, buffer, size, mimetype } = req.file
     const userId = req.user.id
 
+    // 🔍 OBTENER INFORMACIÓN DEL USUARIO
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { nombre: true, email: true }
+    })
+
+    if (!user) {
+      return res.status(401).json({ error: 'Usuario no encontrado' })
+    }
+
+    console.log(`👤 Usuario: ${user.nombre} (${user.email})`)
+
     // Instanciar procesador de PDF
     const pdfProcessor = new PDFProcessor();
 
@@ -291,12 +303,19 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
       })
     }
 
-    // 4️⃣ SUBIR A CLOUDFLARE R2 (PDF final) 
+    // 4️⃣ SUBIR A CLOUDFLARE R2 (PDF final)
     const fileName = wasProcessed ? `processed_${originalname}` : originalname;
     console.log(`🌩️ Subiendo a Cloudflare R2: ${fileName}`)
+    
+    // Verificar nuevamente que R2 esté configurado antes de subir
+    if (!r2Service.isConfigured()) {
+      throw new Error('Servicio de almacenamiento Cloudflare R2 no está configurado')
+    }
+    
     const uploadResult = await r2Service.uploadFile(finalBuffer, fileName, mimetype)
+    console.log(`✅ Archivo subido exitosamente a R2: ${uploadResult.key}`)
 
-    // 5️⃣ GUARDAR EN BASE DE DATOS
+    // 5️⃣ GUARDAR EN BASE DE DATOS CON INFORMACIÓN DE USUARIO
     const document = await prisma.document.create({
       data: {
         name: fileName,
@@ -304,14 +323,14 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
         size: finalBuffer.length, // Tamaño del archivo final
         status: 'processed',
         userId: userId,
-        company: 'Empresa Demo',
+        company: user.nombre, // ✅ USAR NOMBRE DEL USUARIO EN LUGAR DE "Empresa Demo"
         uploadDate: new Date(),
         processedAt: new Date(),
         filePath: uploadResult.key
       }
     })
 
-    console.log('✅ Documento guardado en BD:', document.id)
+    console.log(`✅ Documento guardado en BD: ${document.id} para usuario: ${user.nombre}`)
 
     res.status(201).json({
       success: true,

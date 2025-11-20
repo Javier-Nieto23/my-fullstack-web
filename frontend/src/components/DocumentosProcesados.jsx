@@ -38,23 +38,53 @@ const DocumentosProcesados = () => {
     }
   }
 
-  const handleVisualizar = (documentoId) => {
+  const handleVisualizar = async (documentoId) => {
     const token = localStorage.getItem('token')
-    const url = `${API_BASE_URL}/api/documents/${documentoId}/view`
     
-    // Abrir PDF en nueva pestaña con token de autorización
-    window.open(url + `?token=${token}`, '_blank')
+    if (!token) {
+      setError('No hay sesión activa')
+      return
+    }
+
+    try {
+      // Obtener la URL con autenticación
+      const url = `${API_BASE_URL}/api/documents/${documentoId}/view?token=${token}`
+      
+      // Abrir en nueva ventana
+      const newWindow = window.open('', '_blank')
+      newWindow.location.href = url
+      
+    } catch (err) {
+      console.error('Error al visualizar documento:', err)
+      setError('Error al visualizar el documento')
+    }
   }
 
-  const handleDescargar = (documentoId) => {
+  const handleDescargar = async (documentoId, originalName) => {
     const token = localStorage.getItem('token')
-    const url = `${API_BASE_URL}/api/documents/${documentoId}/download`
     
-    // Crear enlace temporal para descarga
-    const link = document.createElement('a')
-    link.href = url + `?token=${token}`
-    link.download = true
-    link.click()
+    if (!token) {
+      setError('No hay sesión activa')
+      return
+    }
+
+    try {
+      // Crear URL de descarga con autenticación
+      const url = `${API_BASE_URL}/api/documents/${documentoId}/download?token=${token}`
+      
+      // Crear enlace temporal para descarga con nombre específico
+      const link = document.createElement('a')
+      link.href = url
+      link.download = originalName || `documento_${documentoId}.pdf`
+      link.target = '_blank'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      
+    } catch (err) {
+      console.error('Error al descargar documento:', err)
+      setError('Error al descargar el documento')
+    }
   }
 
   const formatearFecha = (fecha) => {
@@ -167,7 +197,7 @@ const DocumentosProcesados = () => {
                       </button>
                       <button
                         className="btn-action btn-download"
-                        onClick={() => handleDescargar(doc.id)}
+                        onClick={() => handleDescargar(doc.id, doc.originalName)}
                         title="Descargar PDF"
                       >
                         📥 Descargar
