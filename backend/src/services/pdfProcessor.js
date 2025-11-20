@@ -73,8 +73,7 @@ class PDFProcessor {
 
       // 🔄 ESTRATEGIA: Ghostscript con rasterización completa y recreación
       console.log('🔄 Aplicando conversión completa con rasterización...');
-      
-const gsCommand = [
+  const gsCommand = [
   "gs",
   "-sDEVICE=pdfwrite",
   "-dNOPAUSE",
@@ -82,25 +81,23 @@ const gsCommand = [
   "-dBATCH",
   "-dSAFER",
 
-  // 🔥 Fuercen el espacio de color a escala de grises
+  // 🔥 Convertir TODO a escala de grises
   "-dProcessColorModel=/DeviceGray",
   "-dColorConversionStrategy=/Gray",
-  "-dOverrideICC",                     // ← Necesario para ignorar ICC incrustados
+  "-dOverrideICC",                     // ← Ignorar perfiles ICC incrustados
+  "-dConvertCMYKImagesToRGB=true",     // ← CMYK → RGB → Gray
 
-  // 🔄 Convertir CMYK → RGB → Gray
-  "-dConvertCMYKImagesToRGB=true",
-
-  // 📌 Rasterización (opcional, pero útil)
+  // 🔄 Rasterización opcional pero útil
   "-r300",
   "-dPDFSETTINGS=/prepress",
 
-  // 🔧 Forzar que TODAS las imágenes pasen por conversiones
+  // 🔧 Forzar que TODAS las imágenes pasen por filtro
   "-dAutoFilterColorImages=false",
   "-dAutoFilterGrayImages=false",
   "-dColorImageFilter=/FlateEncode",
   "-dGrayImageFilter=/FlateEncode",
 
-  // 🔽 Downsampling (si lo quieres)
+  // 🔽 Downsampling
   "-dDownsampleColorImages=true",
   "-dDownsampleGrayImages=true",
   "-dDownsampleMonoImages=true",
@@ -112,11 +109,10 @@ const gsCommand = [
   "-dColorImageDepth=8",
   "-dGrayImageDepth=8",
 
-  // 🛠 PDF output
+  // 🛠 Archivo resultante
   `-sOutputFile=${outputPath}`,
   inputPath
 ].join(" ");
-
 
       console.log('🔧 Comando Ghostscript completo:', gsCommand);
       
