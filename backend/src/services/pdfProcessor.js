@@ -59,7 +59,7 @@ class PDFProcessor {
    * Paso a paso - implementación básica y robusta
    */
   async simpleGrayscaleOnly(inputPath, outputPath) {
-    console.log('🎯 Convirtiendo a escala de grises con 300 DPI (método mejorado)...');
+    console.log('🎯 Convirtiendo a escala de grises con 300 DPI (método 2-pasos)...');
 
     try {
       // 🔍 DIAGNÓSTICO ANTES: Ver imágenes originales
@@ -71,45 +71,60 @@ class PDFProcessor {
         console.log('⚠️ No se pudo analizar imágenes originales:', err.message);
       }
 
-      // Comando Ghostscript AGRESIVO para FORZAR upscaling a 300 DPI
-      const gsCommand = [
+      // 🔄 PASO 1: Conversión básica a escala de grises (sin cambio de DPI)
+      console.log('🔄 PASO 1: Conversión básica a escala de grises...');
+      const tempGrayPath = inputPath.replace('.pdf', '_gray.pdf');
+      
+      const gsBasicCommand = [
         'gs',
         '-sDEVICE=pdfwrite',
         '-dNOPAUSE',
         '-dQUIET',
         '-dBATCH',
-        '-sColorConversionStrategy=Gray',     // Convertir a escala de grises
-        '-dProcessColorModel=/DeviceGray',    // Forzar modelo de color gris
-        '-dCompatibilityLevel=1.4',           // PDF estándar compatible
-        '-dColorImageResolution=300',         // OBJETIVO: 300 DPI en imágenes color
-        '-dGrayImageResolution=300',          // OBJETIVO: 300 DPI en imágenes grises
-        '-dMonoImageResolution=300',          // OBJETIVO: 300 DPI en imágenes mono
-        '-dDownsampleColorImages=true',       // HABILITAR resampling para upscaling
-        '-dDownsampleGrayImages=true',        // HABILITAR resampling para upscaling
-        '-dDownsampleMonoImages=true',        // HABILITAR resampling para upscaling
-        '-dColorImageDownsampleType=/Bicubic', // Usar interpolación bicúbica
-        '-dGrayImageDownsampleType=/Bicubic',  // Usar interpolación bicúbica
-        '-dMonoImageDownsampleType=/Bicubic',  // Usar interpolación bicúbica
-        '-dColorImageDownsampleThreshold=1.0', // Threshold para forzar resampling
-        '-dGrayImageDownsampleThreshold=1.0',  // Threshold para forzar resampling
-        '-dMonoImageDownsampleThreshold=1.0',  // Threshold para forzar resampling
-        '-dColorImageDepth=8',                // Forzar 8 bits por canal
-        '-dGrayImageDepth=8',                 // Forzar 8 bits para grises
-        '-dAutoRotatePages=/None',            // No rotar páginas
-        '-dEmbedAllFonts=true',               // Embebear fuentes
-        '-dSubsetFonts=true',                 // Subconjunto de fuentes
-        '-dCompressFonts=true',               // Comprimir fuentes
-        '-dDetectDuplicateImages=true',       // Detectar imágenes duplicadas
-        `-sOutputFile=${outputPath}`,
+        '-sColorConversionStrategy=Gray',
+        '-dProcessColorModel=/DeviceGray',
+        '-dCompatibilityLevel=1.4',
+        '-dPreserveHalftoneInfo=false',
+        '-dPreserveOPIComments=false',
+        '-dPreserveOverprintSettings=false',
+        '-dUCRandBGInfo=/Remove',
+        `-sOutputFile=${tempGrayPath}`,
         inputPath
       ].join(' ');
 
-      console.log('🔄 Ejecutando conversión Ghostscript con 300 DPI...');
-      console.log('🔧 Comando:', gsCommand);
+      await execAsync(gsBasicCommand);
+      console.log('✅ Paso 1 completado: Color convertido a escala de grises');
+
+      // 🔄 PASO 2: Upscaling con ImageMagick (más efectivo que Ghostscript para esto)
+      console.log('🔄 PASO 2: Upscaling a 300 DPI con ImageMagick...');
       
-      const { stdout: gsOutput, stderr: gsError } = await execAsync(gsCommand);
-      if (gsOutput) console.log('📝 Salida GS:', gsOutput);
-      if (gsError) console.log('⚠️ Errores GS:', gsError);
+      const magickCommand = [
+        'convert',
+        '-density', '300',           // Establecer densidad objetivo
+        '-resample', '300x300',      // Resamplear a 300x300 DPI
+        '-colorspace', 'Gray',       // Asegurar escala de grises
+        '-depth', '8',               // Asegurar 8 bits
+        '-compress', 'jpeg',         // Comprimir con JPEG
+        '-quality', '85',            // Calidad 85% para balance tamaño/calidad
+        tempGrayPath,
+        outputPath
+      ].join(' ');
+
+      console.log('🔧 Comando ImageMagick:', magickCommand);
+      
+      try {
+        await execAsync(magickCommand);
+        console.log('✅ Paso 2 completado: DPI escalado a 300');
+      } catch (magickError) {
+        console.warn('⚠️ ImageMagick falló, usando solo conversión de color:', magickError.message);
+        // Fallback: usar solo la conversión de color si ImageMagick falla
+        await fs.copyFile(tempGrayPath, outputPath);
+      }
+
+      // Limpiar archivo temporal
+      try {
+        await fs.unlink(tempGrayPath);
+      } catch {}
 
       // Verificar que el archivo se generó correctamente
       const stats = await fs.stat(outputPath);
@@ -126,11 +141,11 @@ class PDFProcessor {
         console.log('⚠️ No se pudo analizar imágenes procesadas:', err.message);
       }
 
-      console.log(`✅ Conversión con 300 DPI completada - Tamaño: ${(stats.size / 1024).toFixed(2)}KB`);
+      console.log(`✅ Conversión 2-pasos completada - Tamaño: ${(stats.size / 1024).toFixed(2)}KB`);
       return { success: true };
 
     } catch (error) {
-      console.error('❌ Error en conversión a escala de grises:', error);
+      console.error('❌ Error en conversión 2-pasos:', error);
       throw new Error(`Error en conversión: ${error.message}`);
     }
   }
