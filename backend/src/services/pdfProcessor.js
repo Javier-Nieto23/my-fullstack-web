@@ -74,40 +74,49 @@ class PDFProcessor {
       // 🔄 ESTRATEGIA: Ghostscript con rasterización completa y recreación
       console.log('🔄 Aplicando conversión completa con rasterización...');
       
-      const gsCommand = [
-        'gs',
-        '-sDEVICE=pdfwrite',
-        '-dNOPAUSE',
-        '-dQUIET',
-        '-dBATCH',
-        '-dSAFER',
-        '-sColorConversionStrategy=Gray',       // Convertir a escala de grises
-        '-dProcessColorModel=/DeviceGray',      // Forzar modelo gris
-        '-dCompatibilityLevel=1.4',             // PDF compatible
-        '-r300',                                // RESOLUCIÓN GLOBAL 300 DPI
-        '-dPDFSETTINGS=/prepress',             // Configuración de alta calidad
-        '-dColorImageResolution=300',           // Imágenes color a 300 DPI
-        '-dGrayImageResolution=300',            // Imágenes grises a 300 DPI  
-        '-dMonoImageResolution=300',            // Imágenes mono a 300 DPI
-        '-dDownsampleColorImages=true',         // Habilitar resampling
-        '-dDownsampleGrayImages=true',          // Habilitar resampling
-        '-dDownsampleMonoImages=true',          // Habilitar resampling
-        '-dColorImageDownsampleType=/Bicubic',  // Interpolación de calidad
-        '-dGrayImageDownsampleType=/Bicubic',   // Interpolación de calidad
-        '-dMonoImageDownsampleType=/Bicubic',   // Interpolación de calidad
-        '-dColorImageDownsampleThreshold=0.1',  // Threshold muy bajo para forzar resampling
-        '-dGrayImageDownsampleThreshold=0.1',   // Threshold muy bajo para forzar resampling
-        '-dMonoImageDownsampleThreshold=0.1',   // Threshold muy bajo para forzar resampling
-        '-dUpsampleColorImages=true',           // FORZAR UPSAMPLING de imágenes color
-        '-dUpsampleGrayImages=true',            // FORZAR UPSAMPLING de imágenes grises
-        '-dUpsampleMonoImages=true',            // FORZAR UPSAMPLING de imágenes mono
-        '-dColorImageDepth=8',                  // 8 bits por canal
-        '-dGrayImageDepth=8',                   // 8 bits grises
-        '-dAutoRotatePages=/None',              // Sin rotación automática
-        '-dOptimize=true',                      // Optimizar salida
-        `-sOutputFile=${outputPath}`,
-        inputPath
-      ].join(' ');
+const gsCommand = [
+  "gs",
+  "-sDEVICE=pdfwrite",
+  "-dNOPAUSE",
+  "-dQUIET",
+  "-dBATCH",
+  "-dSAFER",
+
+  // 🔥 Fuercen el espacio de color a escala de grises
+  "-dProcessColorModel=/DeviceGray",
+  "-dColorConversionStrategy=/Gray",
+  "-dOverrideICC",                     // ← Necesario para ignorar ICC incrustados
+
+  // 🔄 Convertir CMYK → RGB → Gray
+  "-dConvertCMYKImagesToRGB=true",
+
+  // 📌 Rasterización (opcional, pero útil)
+  "-r300",
+  "-dPDFSETTINGS=/prepress",
+
+  // 🔧 Forzar que TODAS las imágenes pasen por conversiones
+  "-dAutoFilterColorImages=false",
+  "-dAutoFilterGrayImages=false",
+  "-dColorImageFilter=/FlateEncode",
+  "-dGrayImageFilter=/FlateEncode",
+
+  // 🔽 Downsampling (si lo quieres)
+  "-dDownsampleColorImages=true",
+  "-dDownsampleGrayImages=true",
+  "-dDownsampleMonoImages=true",
+  "-dColorImageDownsampleType=/Bicubic",
+  "-dGrayImageDownsampleType=/Bicubic",
+  "-dMonoImageDownsampleType=/Bicubic",
+
+  // 🖼 Profundidad
+  "-dColorImageDepth=8",
+  "-dGrayImageDepth=8",
+
+  // 🛠 PDF output
+  `-sOutputFile=${outputPath}`,
+  inputPath
+].join(" ");
+
 
       console.log('🔧 Comando Ghostscript completo:', gsCommand);
       
