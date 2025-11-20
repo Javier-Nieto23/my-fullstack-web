@@ -3,17 +3,26 @@
   "version": "1.0.0",
   "description": "Full-stack application with React, Node.js, Express, and PostgreSQL",
   "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
   "scripts": {
     "start": "cd backend && npm start",
     "dev": "cd backend && npm run dev",
-    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install"
+    "install-all": "npm install && cd backend && npm install && cd ../frontend && npm install",
+    "build": "cd frontend && npm run build",
+    "deploy": "npm run install-all && npm run build"
   },
   "keywords": [
     "fullstack",
     "react",
     "express",
     "postgresql",
-    "prisma"
+    "prisma",
+    "pdf-processing",
+    "ghostscript"
   ],
   "author": "Javier Nieto",
   "license": "MIT",
@@ -22,5 +31,9 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.0"
-  }
+  },
+  "workspaces": [
+    "backend",
+    "frontend"
+  ]
 }

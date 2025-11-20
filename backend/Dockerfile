@@ -4,13 +4,18 @@ WORKDIR /app
 # Instalar herramientas PDF necesarias y dependencias del sistema
 RUN apk add --no-cache \
     openssl \
+    ca-certificates \
     poppler-utils \
     mupdf-tools \
     ghostscript \
     imagemagick \
     libpng-dev \
     libjpeg-turbo-dev \
-    && ln -sf /usr/bin/mutool /usr/local/bin/mutool
+    cairo-dev \
+    pango-dev \
+    && ln -sf /usr/bin/mutool /usr/local/bin/mutool \
+    && mkdir -p /app/uploads \
+    && chmod 755 /app/uploads
 
 # Verificar que las herramientas estén disponibles
 RUN pdfinfo -v && pdfimages -help && mutool -v && gs --version && convert -version
