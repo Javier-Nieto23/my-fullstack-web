@@ -2,545 +2,476 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs/promises';
 import path from 'path';
-import os from 'os';
-import { fileTypeFromBuffer } from 'file-type';
 
 const execAsync = promisify(exec);
 
 /**
- * 🔍 Servicio de Validación PDF - Adaptado para Railway
- * Convierte las funciones PHP de Joel a Node.js moderno
- * Especificaciones: Solo PDF, escala grises 8 bits, 300 DPI, máx 3MB, sin contenido restringido
+ * 🎯 VALIDADOR PDF PROFESIONAL
+ * 
+ * Herramientas integradas:
+ * ✅ Ghostscript - Conversión y análisis profesional
+ * ✅ Poppler-utils (pdfinfo, pdfimages) - Análisis detallado
+ * ✅ Mupdf-tools (mutool) - Verificación y extracción
+ * 
+ * Validaciones automáticas:
+ * ✅ Detección de páginas en blanco (posible OCR)
+ * ✅ Detección de código/JavaScript embebido
+ * ✅ Validación DPI y formato de color
+ * ✅ Verificación de estructura PDF
  */
-export class PDFValidator {
+class PDFValidator {
   constructor() {
-    this.maxSizeBytes = 3 * 1024 * 1024; // 3 MB
     this.requiredDPI = 300;
-    this.allowedFormats = ['gray'];
-    this.requiredBitsPerComponent = 8;
+    this.requiredColorMode = 'grayscale';
+    this.requiredBitDepth = 8;
+    this.maxSizeBytes = 3 * 1024 * 1024; // 3MB
+    this.tempDir = '/tmp/pdf-validation';
   }
 
   /**
-   * 🎯 VALIDACIÓN COMPLETA DEL PDF
-   * @param {Buffer} fileBuffer - Buffer del archivo
-   * @param {string} originalName - Nombre original del archivo
-   * @returns {Object} Resultado completo de validación
+   * 🎯 VALIDACIÓN PRINCIPAL
+   * Punto de entrada para todas las validaciones
    */
-  async validatePDF(fileBuffer, originalName) {
-    console.log('🔍 Iniciando validación PDF completa...');
-    
+  async validatePDF(inputBuffer, filename = 'document.pdf') {
+    console.log(`🔍 Iniciando validación completa: ${filename}`);
+
     const results = {
-      valid: true,
-      errors: [],
-      warnings: [],
-      checks: {},
-      summary: '',
-      isProcessable: true, // NUEVO: Indica si se puede procesar
-      hasOCR: false // NUEVO: Indica si tiene OCR
-    };
-
-    try {
-      // 1️⃣ Verificar tipo de archivo
-      const typeCheck = await this.validateFileType(fileBuffer);
-      results.checks.fileType = typeCheck;
-      if (!typeCheck.valid) {
-        results.valid = false;
-        results.isProcessable = false;
-        results.errors.push(typeCheck.message);
-      }
-
-      // 2️⃣ Verificar tamaño
-      const sizeCheck = this.validateFileSize(fileBuffer);
-      results.checks.fileSize = sizeCheck;
-      if (!sizeCheck.valid) {
-        results.valid = false;
-        // Tamaño grande no impide procesamiento
-        results.errors.push(sizeCheck.message);
-      }
-
-      // Si falla validación básica crítica, no continuar
-      if (!results.isProcessable) {
-        results.summary = 'PDF rechazado: No es un archivo PDF válido';
-        return results;
-      }
-
-      // Crear archivo temporal para validaciones avanzadas
-      const tempFile = await this.createTempFile(fileBuffer);
-      
-      try {
-        // 3️⃣ VERIFICAR OCR (CRÍTICO - RECHAZO DEFINITIVO)
-        const ocrCheck = await this.detectOCR(tempFile);
-        results.checks.ocr = ocrCheck;
-        results.hasOCR = ocrCheck.hasOCR;
-        
-        if (ocrCheck.hasOCR) {
-          results.valid = false;
-          results.isProcessable = false; // No se puede procesar si tiene OCR
-          results.errors.push('❌ RECHAZADO: Documento contiene texto OCR escaneado');
-        }
-
-        // 4️⃣ Verificar contenido prohibido
-        const contentCheck = await this.validateContent(tempFile);
-        results.checks.content = contentCheck;
-        if (!contentCheck.valid) {
-          results.valid = false;
-          results.isProcessable = false; // Contenido prohibido tampoco se puede procesar
-          results.errors.push(...contentCheck.errors);
-        }
-
-        // 5️⃣ Verificar páginas en blanco y estructura
-        const processingCheck = await this.validateProcessing(tempFile);
-        results.checks.processing = processingCheck;
-        if (!processingCheck.valid) {
-          results.valid = false;
-          // Páginas en blanco SÍ se pueden procesar
-          results.errors.push(...processingCheck.errors);
-        }
-        if (processingCheck.warnings.length > 0) {
-          results.warnings.push(...processingCheck.warnings);
-        }
-
-        // 6️⃣ Verificar imágenes (resolución y escala de grises)
-        const imageCheck = await this.validateImages(tempFile);
-        results.checks.images = imageCheck;
-        if (!imageCheck.valid) {
-          results.valid = false;
-          // Imágenes incorrectas SÍ se pueden procesar
-          results.errors.push(...imageCheck.errors);
-        }
-
-      } finally {
-        // Limpiar archivo temporal
-        await this.cleanupTempFile(tempFile);
-      }
-
-      // Generar resumen basado en procesabilidad
-      if (!results.isProcessable) {
-        results.summary = results.hasOCR 
-          ? '🚫 PDF RECHAZADO DEFINITIVAMENTE - Contiene OCR escaneado'
-          : `🚫 PDF RECHAZADO DEFINITIVAMENTE - ${results.errors.length} errores críticos`;
-      } else if (!results.valid) {
-        results.summary = `🔄 PDF PROCESABLE - ${results.errors.length} errores que se pueden corregir automáticamente`;
-      } else {
-        results.summary = '✅ PDF válido - Cumple todas las especificaciones';
-      }
-
-    } catch (error) {
-      console.error('Error en validación PDF:', error);
-      results.valid = false;
-      results.isProcessable = false;
-      results.errors.push(`Error interno de validación: ${error.message}`);
-      results.summary = '❌ Error durante validación';
-    }
-
-    return results;
-  }
-
-  /**
-   * 🔍 DETECTAR OCR EN PDF
-   * Verifica si el PDF contiene texto escaneado con OCR
-   */
-  async detectOCR(tempFilePath) {
-    const result = {
+      filename,
+      fileSize: inputBuffer.length,
+      valid: false,
+      isProcessable: false,
       hasOCR: false,
-      confidence: 0,
-      details: [],
-      method: 'text-analysis'
-    };
-
-    try {
-      // Extraer texto del PDF
-      const { stdout: textContent } = await execAsync(`pdftotext -layout -nopgbrk "${tempFilePath}" -`);
-      
-      if (textContent.trim().length === 0) {
-        result.hasOCR = true;
-        result.confidence = 90;
-        result.details.push('PDF sin texto extraíble - posible escaneo');
-        return result;
-      }
-
-      // Patrones indicativos de OCR
-      const ocrPatterns = [
-        /[Il1|]{3,}/g, // Secuencias de caracteres confundibles por OCR
-        /[0O]{3,}/g,   // Ceros y O's mezclados
-        /\s[a-z]\s[a-z]\s/g, // Letras sueltas espaciadas (OCR mal)
-        /[^\w\s\.\,\;\:\!\?\-\(\)]{2,}/g, // Caracteres raros
-        /\b\w{1}\s+\w{1}\s+\w{1}\b/g // Palabras fragmentadas
-      ];
-
-      let ocrScore = 0;
-      const textSample = textContent.substring(0, 2000); // Muestra de 2KB
-
-      for (const pattern of ocrPatterns) {
-        const matches = textSample.match(pattern);
-        if (matches) {
-          ocrScore += matches.length;
-          result.details.push(`Patrón OCR detectado: ${pattern.source} (${matches.length} coincidencias)`);
-        }
-      }
-
-      // Calcular confianza basada en la proporción de errores
-      const textLength = textSample.length;
-      const errorRatio = textLength > 0 ? (ocrScore / textLength) * 100 : 0;
-      
-      if (errorRatio > 2) { // Más del 2% de caracteres sospechosos
-        result.hasOCR = true;
-        result.confidence = Math.min(90, errorRatio * 20);
-        result.details.push(`Ratio de errores OCR: ${errorRatio.toFixed(2)}%`);
-      }
-
-      // Verificación adicional: buscar metadatos de escaneo
-      try {
-        const { stdout: metadata } = await execAsync(`pdfinfo "${tempFilePath}"`);
-        if (metadata.includes('scan') || metadata.includes('OCR') || metadata.includes('Adobe Acrobat Image')) {
-          result.hasOCR = true;
-          result.confidence = Math.max(result.confidence, 80);
-          result.details.push('Metadatos indican documento escaneado');
-        }
-      } catch {
-        // Ignorar errores de metadatos
-      }
-
-    } catch (error) {
-      result.details.push(`Error detectando OCR: ${error.message}`);
-    }
-
-    return result;
-  }
-
-  /**
-   * 1️⃣ VALIDAR TIPO DE ARCHIVO
-   * Equivale a tipo.php de Joel
-   */
-  async validateFileType(fileBuffer) {
-    try {
-      const fileType = await fileTypeFromBuffer(fileBuffer);
-      
-      if (!fileType || fileType.mime !== 'application/pdf') {
-        return {
-          valid: false,
-          message: `⚠️ Archivo no es un PDF válido. Tipo detectado: ${fileType?.mime || 'desconocido'}`,
-          detectedType: fileType?.mime || 'unknown'
-        };
-      }
-
-      return {
-        valid: true,
-        message: '✅ Tipo de archivo PDF válido',
-        detectedType: fileType.mime
-      };
-    } catch (error) {
-      return {
-        valid: false,
-        message: `❌ Error verificando tipo de archivo: ${error.message}`,
-        detectedType: 'error'
-      };
-    }
-  }
-
-  /**
-   * 2️⃣ VALIDAR TAMAÑO DE ARCHIVO
-   * Equivale a tamano.php de Joel
-   */
-  validateFileSize(fileBuffer) {
-    const fileSize = fileBuffer.length;
-    const sizeMB = (fileSize / (1024 * 1024)).toFixed(2);
-
-    if (fileSize > this.maxSizeBytes) {
-      return {
-        valid: false,
-        message: `❌ Archivo excede el tamaño máximo de 3 MB. Tamaño actual: ${sizeMB} MB`,
-        actualSize: fileSize,
-        maxSize: this.maxSizeBytes
-      };
-    }
-
-    return {
-      valid: true,
-      message: `✅ Tamaño adecuado: ${sizeMB} MB`,
-      actualSize: fileSize,
-      maxSize: this.maxSizeBytes
-    };
-  }
-
-  /**
-   * 3️⃣ VALIDAR CONTENIDO PROHIBIDO
-   * Equivale a contenido.php de Joel
-   */
-  async validateContent(tempFilePath) {
-    const result = {
-      valid: true,
-      errors: [],
-      warnings: [],
-      checks: {}
-    };
-
-    try {
-      // Verificar si PDF tiene contraseña - con fallback
-      try {
-        const { stdout: pdfInfo } = await execAsync(`pdfinfo "${tempFilePath}"`);
-        const hasPassword = pdfInfo.includes('Encrypted: yes');
-        result.checks.password = !hasPassword;
-        
-        if (hasPassword) {
-          result.valid = false;
-          result.errors.push('❌ PDF con contraseña no permitido');
-        }
-      } catch (pdfinfoError) {
-        result.warnings.push('⚠️ No se pudo verificar cifrado (pdfinfo no disponible)');
-        result.checks.password = null; // Asumimos que no tiene contraseña si no podemos verificar
-      }
-
-      // Verificar formularios, objetos incrustados y JavaScript usando mutool - con fallback
-      try {
-        const { stdout: trailer } = await execAsync(`mutool show "${tempFilePath}" trailer`);
-        
-        // Verificar formularios AcroForm
-        const hasForms = trailer.includes('/AcroForm');
-        result.checks.forms = !hasForms;
-        if (hasForms) {
-          result.valid = false;
-          result.errors.push('❌ Contiene formularios (AcroForm)');
-        }
-
-        // Verificar objetos incrustados
-        const hasEmbedded = trailer.includes('/EmbeddedFiles') || trailer.includes('/FileAttachment');
-        result.checks.embedded = !hasEmbedded;
-        if (hasEmbedded) {
-          result.valid = false;
-          result.errors.push('❌ Contiene archivos incrustados');
-        }
-
-        // Verificar JavaScript
-        const hasJS = /\/(JavaScript|JS)/.test(trailer);
-        result.checks.javascript = !hasJS;
-        if (hasJS) {
-          result.valid = false;
-          result.errors.push('❌ Contiene código JavaScript');
-        }
-
-      } catch (mutoolError) {
-        result.warnings.push('⚠️ No se pudo verificar contenido avanzado (mutool no disponible)');
-        // Asumimos que no tiene contenido prohibido si no podemos verificar
-        result.checks.forms = null;
-        result.checks.embedded = null;
-        result.checks.javascript = null;
-      }
-
-    } catch (error) {
-      result.valid = false;
-      result.errors.push(`❌ Error validando contenido: ${error.message}`);
-    }
-
-    return result;
-  }
-
-  /**
-   * 4️⃣ VALIDAR PROCESAMIENTO (PÁGINAS EN BLANCO Y OCR)
-   * Equivale a procesamiento.php de Joel
-   */
-  async validateProcessing(tempFilePath) {
-    const result = {
-      valid: true,
-      errors: [],
-      warnings: [],
-      checks: {}
-    };
-
-    try {
-      // Extraer texto del PDF - con fallback si pdftotext no está disponible
-      let hasText = false;
-      try {
-        const { stdout: textContent } = await execAsync(`pdftotext -layout -nopgbrk "${tempFilePath}" -`);
-        hasText = textContent.trim().length > 0;
-        result.checks.hasText = hasText;
-
-        if (!hasText) {
-          result.warnings.push('⚠️ PDF no contiene texto (posible escaneo sin OCR)');
-        }
-      } catch (pdftoTextError) {
-        result.warnings.push('⚠️ No se pudo extraer texto del PDF (pdftotext no disponible)');
-        result.checks.hasText = null; // No se pudo verificar
-      }
-
-      // Detectar número de páginas - con fallback si pdfinfo no está disponible
-      try {
-        const { stdout: pages } = await execAsync(`pdfinfo "${tempFilePath}" | grep Pages`);
-        const pageCount = parseInt(pages.match(/Pages:\s+(\d+)/)?.[1] || '0');
-        
-        if (pageCount === 0) {
-          result.valid = false;
-          result.errors.push('❌ PDF no contiene páginas válidas');
-        } else if (pageCount > 50) {
-          result.warnings.push(`⚠️ PDF con muchas páginas (${pageCount}). Revisar manualmente.`);
-        }
-        
-        result.checks.pageCount = pageCount;
-      } catch (pdfinfoError) {
-        result.warnings.push('⚠️ No se pudo verificar número de páginas (pdfinfo no disponible)');
-        result.checks.pageCount = null; // No se pudo verificar
-      }
-
-    } catch (error) {
-      result.warnings.push(`⚠️ Error en validación de procesamiento: ${error.message}`);
-    }
-
-    return result;
-  }
-
-  /**
-   * 5️⃣ VALIDAR IMÁGENES (RESOLUCIÓN Y ESCALA DE GRISES)
-   * Equivale a resolucion.php y escala_gris.php de Joel
-   */
-  async validateImages(tempFilePath) {
-    const result = {
-      valid: true,
+      hasJavaScript: false,
+      hasBlankPages: false,
       errors: [],
       warnings: [],
       checks: {
-        totalImages: 0,
-        validImages: 0,
-        resolutionIssues: [],
-        colorIssues: []
-      }
+        basicStructure: false,
+        imageAnalysis: false,
+        contentAnalysis: false,
+        securityAnalysis: false
+      },
+      images: [],
+      metadata: {},
+      summary: ''
     };
 
     try {
-      // Usar pdfimages para analizar imágenes - con fallback si no está disponible
-      try {
-        const { stdout: imageList } = await execAsync(`pdfimages -list "${tempFilePath}"`);
-        const lines = imageList.split('\n').filter(line => line.trim());
-        
-        // Saltar header (primeras 2 líneas)
-        const imageLines = lines.slice(2).filter(line => /^\s*\d+/.test(line));
-        result.checks.totalImages = imageLines.length;
+      // Crear directorio temporal
+      await this.ensureDirectoryExists(this.tempDir);
+      
+      const timestamp = Date.now();
+      const tempFile = path.join(this.tempDir, `validate_${timestamp}.pdf`);
 
-        if (imageLines.length === 0) {
-          result.warnings.push('⚠️ No se encontraron imágenes en el PDF');
-          return result;
+      // Escribir buffer a archivo temporal
+      await fs.writeFile(tempFile, inputBuffer);
+
+      // 🔍 VALIDACIÓN 1: Estructura básica del PDF
+      await this.validateBasicStructure(tempFile, results);
+
+      // 🔍 VALIDACIÓN 2: Análisis de imágenes y DPI
+      await this.validateImages(tempFile, results);
+
+      // 🔍 VALIDACIÓN 3: Detección de contenido problemático
+      await this.validateContent(tempFile, results);
+
+      // 🔍 VALIDACIÓN 4: Análisis de seguridad
+      await this.validateSecurity(tempFile, results);
+
+      // 🎯 EVALUACIÓN FINAL
+      this.evaluateOverallValidation(results);
+
+      // Limpiar archivo temporal
+      await this.cleanupFiles([tempFile]);
+
+      console.log(`✅ Validación completada: ${results.valid ? 'VÁLIDO' : 'NO VÁLIDO'}`);
+      return results;
+
+    } catch (error) {
+      console.error('❌ Error en validación:', error);
+      results.errors.push(`Error de validación: ${error.message}`);
+      return results;
+    }
+  }
+
+  /**
+   * 🔍 VALIDACIÓN 1: Estructura básica del PDF
+   */
+  async validateBasicStructure(filePath, results) {
+    console.log('🔍 Validando estructura básica...');
+
+    try {
+      // Usar pdfinfo para obtener metadatos básicos
+      const { stdout } = await execAsync(`pdfinfo "${filePath}"`);
+      
+      const metadata = this.parsePdfInfo(stdout);
+      results.metadata = metadata;
+
+      // Verificaciones básicas
+      if (!metadata.pages || metadata.pages === 0) {
+        results.errors.push('PDF sin páginas válidas');
+        return;
+      }
+
+      if (metadata.pages > 50) {
+        results.warnings.push(`PDF tiene ${metadata.pages} páginas, podría ser muy grande`);
+      }
+
+      if (metadata.encrypted === 'yes') {
+        results.errors.push('PDF está protegido con contraseña');
+        return;
+      }
+
+      results.checks.basicStructure = true;
+      console.log(`✅ Estructura básica válida: ${metadata.pages} páginas`);
+
+    } catch (error) {
+      console.error('❌ Error validando estructura:', error);
+      results.errors.push('No es un PDF válido o está corrupto');
+    }
+  }
+
+  /**
+   * 🔍 VALIDACIÓN 2: Análisis de imágenes y DPI
+   */
+  async validateImages(filePath, results) {
+    console.log('🔍 Analizando imágenes y DPI...');
+
+    try {
+      // Usar pdfimages para analizar todas las imágenes
+      const { stdout } = await execAsync(`pdfimages -list "${filePath}"`);
+      
+      if (!stdout || stdout.trim().length === 0) {
+        results.warnings.push('PDF no contiene imágenes detectables');
+        results.checks.imageAnalysis = true;
+        return;
+      }
+
+      const images = this.parsePdfImages(stdout);
+      results.images = images;
+
+      let hasLowDPI = false;
+      let hasColorImages = false;
+      let hasInvalidDepth = false;
+
+      images.forEach((img, index) => {
+        console.log(`📷 Imagen ${index + 1}: ${img.width}x${img.height} - DPI: x=${img.x_ppi}, y=${img.y_ppi} - Color: ${img.color}`);
+
+        // Verificar DPI
+        if (img.x_ppi < this.requiredDPI || img.y_ppi < this.requiredDPI) {
+          hasLowDPI = true;
+          results.warnings.push(`Imagen ${index + 1}: DPI bajo (${img.x_ppi}x${img.y_ppi})`);
         }
 
-        let validCount = 0;
-
-        for (const line of imageLines) {
-          // Parsear línea: page num type width height color comp bpc  enc interp  object ID x-ppi y-ppi size ratio
-          const parts = line.trim().split(/\s+/);
-          
-          if (parts.length >= 10) {
-            const color = parts[5].toLowerCase();
-            const bpc = parseInt(parts[6]);
-            const xDpi = parseInt(parts[10]);
-            const yDpi = parseInt(parts[11]);
-
-            // Verificar resolución (300 DPI mínimo)
-            if (xDpi < this.requiredDPI || yDpi < this.requiredDPI) {
-              result.checks.resolutionIssues.push(`Imagen con ${xDpi}x${yDpi} DPI (requiere ${this.requiredDPI})`);
-            }
-
-            // Verificar escala de grises a 8 bits
-            if (color !== 'gray' || bpc !== this.requiredBitsPerComponent) {
-              result.checks.colorIssues.push(`Imagen: ${color} ${bpc}bpc (requiere gray 8bpc)`);
-            }
-
-            // Contar imágenes válidas
-            if (xDpi >= this.requiredDPI && yDpi >= this.requiredDPI && color === 'gray' && bpc === 8) {
-              validCount++;
-            }
-          }
+        // Verificar color
+        if (img.color !== 'gray' && img.color !== 'mono') {
+          hasColorImages = true;
+          results.warnings.push(`Imagen ${index + 1}: No es escala de grises (${img.color})`);
         }
 
-        result.checks.validImages = validCount;
-
-        // Evaluar resultados
-        if (result.checks.resolutionIssues.length > 0) {
-          result.valid = false;
-          result.errors.push(`❌ ${result.checks.resolutionIssues.length} imágenes con resolución menor a 300 DPI`);
+        // Verificar profundidad de bits
+        if (img.color === 'gray' && img.bits !== '8') {
+          hasInvalidDepth = true;
+          results.warnings.push(`Imagen ${index + 1}: Profundidad incorrecta (${img.bits} bits)`);
         }
+      });
 
-        if (result.checks.colorIssues.length > 0) {
-          result.valid = false;
-          result.errors.push(`❌ ${result.checks.colorIssues.length} imágenes no están en escala de grises a 8 bits`);
-        }
+      // Evaluación general
+      if (hasLowDPI || hasColorImages || hasInvalidDepth) {
+        results.warnings.push('PDF requiere procesamiento para cumplir especificaciones');
+      } else {
+        console.log('✅ Todas las imágenes cumplen especificaciones');
+      }
 
-        if (result.valid) {
-          result.message = `✅ Todas las imágenes cumplen especificaciones (${validCount}/${imageLines.length})`;
-        }
+      results.checks.imageAnalysis = true;
 
-      } catch (pdfimagesError) {
-        // Si pdfimages no está disponible, asumir que no hay problemas de imágenes
-        result.warnings.push(`⚠️ No se pudieron analizar imágenes (pdfimages no disponible): ${pdfimagesError.message}`);
-        result.checks.totalImages = null;
-        result.checks.validImages = null;
+    } catch (error) {
+      console.error('❌ Error analizando imágenes:', error);
+      results.warnings.push('No se pudo analizar imágenes del PDF');
+      results.checks.imageAnalysis = true; // No bloqueante
+    }
+  }
+
+  /**
+   * 🔍 VALIDACIÓN 3: Detección de contenido problemático
+   */
+  async validateContent(filePath, results) {
+    console.log('🔍 Analizando contenido del PDF...');
+
+    try {
+      // 🔍 A) Detectar páginas en blanco (posible OCR)
+      await this.detectBlankPages(filePath, results);
+
+      // 🔍 B) Extraer y analizar texto
+      await this.analyzeTextContent(filePath, results);
+
+      // 🔍 C) Detectar elementos interactivos
+      await this.detectInteractiveElements(filePath, results);
+
+      results.checks.contentAnalysis = true;
+
+    } catch (error) {
+      console.error('❌ Error analizando contenido:', error);
+      results.warnings.push('No se pudo analizar contenido del PDF');
+      results.checks.contentAnalysis = true;
+    }
+  }
+
+  /**
+   * 🔍 VALIDACIÓN 4: Análisis de seguridad
+   */
+  async validateSecurity(filePath, results) {
+    console.log('🔍 Analizando aspectos de seguridad...');
+
+    try {
+      // Usar mutool para análisis profundo
+      const { stdout } = await execAsync(`mutool info "${filePath}"`);
+      
+      // Buscar JavaScript embebido
+      if (stdout.toLowerCase().includes('javascript')) {
+        results.hasJavaScript = true;
+        results.errors.push('PDF contiene JavaScript embebido');
+      }
+
+      // Buscar formularios
+      if (stdout.toLowerCase().includes('acroform') || stdout.toLowerCase().includes('form')) {
+        results.warnings.push('PDF contiene formularios');
+      }
+
+      // Buscar enlaces externos
+      if (stdout.toLowerCase().includes('uri') || stdout.toLowerCase().includes('link')) {
+        results.warnings.push('PDF contiene enlaces externos');
+      }
+
+      results.checks.securityAnalysis = true;
+
+    } catch (error) {
+      console.error('❌ Error en análisis de seguridad:', error);
+      results.warnings.push('No se pudo completar análisis de seguridad');
+      results.checks.securityAnalysis = true;
+    }
+  }
+
+  /**
+   * 🔍 Detectar páginas en blanco (posible contenido OCR)
+   */
+  async detectBlankPages(filePath, results) {
+    try {
+      // Extraer texto de cada página
+      const { stdout } = await execAsync(`mutool draw -t "${filePath}"`);
+      
+      const textLength = stdout.trim().length;
+      const pageCount = results.metadata.pages || 1;
+      const avgTextPerPage = textLength / pageCount;
+
+      // Si hay muy poco texto, podría ser OCR o páginas escaneadas
+      if (avgTextPerPage < 50) { // Menos de 50 caracteres por página
+        results.hasOCR = true;
+        results.warnings.push('PDF parece contener páginas escaneadas o con poco texto (posible OCR)');
+      }
+
+      // Detectar páginas completamente vacías
+      if (textLength === 0) {
+        results.hasBlankPages = true;
+        results.warnings.push('PDF parece contener solo páginas en blanco o imágenes');
       }
 
     } catch (error) {
-      result.warnings.push(`⚠️ Error en validación de imágenes: ${error.message}`);
+      console.log('⚠️ No se pudo analizar texto del PDF:', error.message);
     }
-
-    return result;
   }
 
   /**
-   * 🔧 UTILIDADES AUXILIARES
+   * 🔍 Analizar contenido de texto
    */
-  async createTempFile(fileBuffer) {
-    const tempDir = os.tmpdir();
-    const tempFileName = `pdf_validation_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.pdf`;
-    const tempFilePath = path.join(tempDir, tempFileName);
-    
-    await fs.writeFile(tempFilePath, fileBuffer);
-    return tempFilePath;
-  }
-
-  async cleanupTempFile(tempFilePath) {
+  async analyzeTextContent(filePath, results) {
     try {
-      await fs.unlink(tempFilePath);
+      // Extraer texto completo
+      const { stdout } = await execAsync(`pdftotext "${filePath}" -`);
+      
+      const text = stdout.toLowerCase();
+      
+      // Buscar patrones de código
+      const codePatterns = [
+        'function(',
+        'var ',
+        'const ',
+        'let ',
+        'if (',
+        'for (',
+        'while (',
+        'class ',
+        '<?php',
+        '<script',
+        'console.log',
+        'document.',
+        'window.'
+      ];
+
+      const foundCodePatterns = codePatterns.filter(pattern => text.includes(pattern));
+      
+      if (foundCodePatterns.length > 2) {
+        results.warnings.push(`PDF parece contener código: ${foundCodePatterns.slice(0, 3).join(', ')}`);
+      }
+
     } catch (error) {
-      console.warn('No se pudo eliminar archivo temporal:', tempFilePath);
+      console.log('⚠️ No se pudo extraer texto del PDF:', error.message);
     }
   }
 
   /**
-   * 📊 REPORTE DETALLADO
+   * 🔍 Detectar elementos interactivos
    */
-  generateDetailedReport(validationResult) {
-    const { valid, errors, warnings, checks, summary } = validationResult;
+  async detectInteractiveElements(filePath, results) {
+    try {
+      // Usar pdfinfo para detectar formularios
+      const { stdout } = await execAsync(`pdfinfo "${filePath}"`);
+      
+      if (stdout.toLowerCase().includes('form')) {
+        results.warnings.push('PDF contiene formularios interactivos');
+      }
+
+    } catch (error) {
+      console.log('⚠️ No se pudo analizar elementos interactivos:', error.message);
+    }
+  }
+
+  /**
+   * 🎯 Evaluación final de toda la validación
+   */
+  evaluateOverallValidation(results) {
+    // Un PDF es procesable si:
+    // 1. Tiene estructura básica válida
+    // 2. No tiene JavaScript (bloqueante)
+    // 3. No está protegido con contraseña (bloqueante)
     
-    let report = `\n📋 REPORTE DE VALIDACIÓN PDF\n`;
-    report += `================================\n`;
-    report += `Estado: ${valid ? '✅ APROBADO' : '❌ RECHAZADO'}\n`;
-    report += `Resumen: ${summary}\n\n`;
+    results.isProcessable = 
+      results.checks.basicStructure && 
+      !results.hasJavaScript &&
+      !results.errors.some(error => error.includes('contraseña'));
 
-    if (checks.fileType) {
-      report += `📎 Tipo: ${checks.fileType.detectedType}\n`;
+    // Un PDF es válido si cumple TODAS las especificaciones
+    results.valid = 
+      results.isProcessable &&
+      results.warnings.length === 0 &&
+      results.errors.length === 0;
+
+    // Generar resumen
+    if (results.valid) {
+      results.summary = '✅ PDF cumple todas las especificaciones';
+    } else if (results.isProcessable) {
+      results.summary = '🔄 PDF es procesable pero requiere conversión automática';
+    } else {
+      results.summary = '❌ PDF no es procesable automáticamente';
     }
-    
-    if (checks.fileSize) {
-      const sizeMB = (checks.fileSize.actualSize / (1024 * 1024)).toFixed(2);
-      report += `📏 Tamaño: ${sizeMB} MB\n`;
+  }
+
+  /**
+   * 📊 Generar reporte detallado de validación
+   */
+  generateDetailedReport(results) {
+    const lines = [
+      `📄 REPORTE DE VALIDACIÓN: ${results.filename}`,
+      `📦 Tamaño: ${(results.fileSize / 1024).toFixed(2)} KB`,
+      `📖 Páginas: ${results.metadata.pages || 'Desconocido'}`,
+      '',
+      `🎯 ESTADO FINAL: ${results.summary}`,
+      `✅ Válido: ${results.valid ? 'SÍ' : 'NO'}`,
+      `🔄 Procesable: ${results.isProcessable ? 'SÍ' : 'NO'}`,
+      ''
+    ];
+
+    if (results.errors.length > 0) {
+      lines.push('❌ ERRORES:');
+      results.errors.forEach(error => lines.push(`   • ${error}`));
+      lines.push('');
     }
 
-    if (checks.processing?.pageCount) {
-      report += `📄 Páginas: ${checks.processing.pageCount}\n`;
+    if (results.warnings.length > 0) {
+      lines.push('⚠️ ADVERTENCIAS:');
+      results.warnings.forEach(warning => lines.push(`   • ${warning}`));
+      lines.push('');
     }
 
-    if (checks.images?.totalImages > 0) {
-      report += `🖼️  Imágenes: ${checks.images.validImages}/${checks.images.totalImages} válidas\n`;
+    if (results.images.length > 0) {
+      lines.push('📷 ANÁLISIS DE IMÁGENES:');
+      results.images.forEach((img, i) => {
+        lines.push(`   ${i + 1}. ${img.width}x${img.height} - DPI: ${img.x_ppi}x${img.y_ppi} - ${img.color} ${img.bits}bits`);
+      });
+      lines.push('');
     }
 
-    if (errors.length > 0) {
-      report += `\n❌ ERRORES (${errors.length}):\n`;
-      errors.forEach(error => report += `  • ${error}\n`);
-    }
+    return lines.join('\n');
+  }
 
-    if (warnings.length > 0) {
-      report += `\n⚠️  ADVERTENCIAS (${warnings.length}):\n`;
-      warnings.forEach(warning => report += `  • ${warning}\n`);
-    }
+  /**
+   * 🔧 UTILIDADES DE PARSEO
+   */
+  parsePdfInfo(pdfInfoOutput) {
+    const metadata = {};
+    const lines = pdfInfoOutput.split('\n');
 
-    return report;
+    lines.forEach(line => {
+      if (line.includes('Pages:')) {
+        metadata.pages = parseInt(line.split(':')[1].trim());
+      } else if (line.includes('Page size:')) {
+        metadata.pageSize = line.split(':')[1].trim();
+      } else if (line.includes('Encrypted:')) {
+        metadata.encrypted = line.split(':')[1].trim().toLowerCase();
+      } else if (line.includes('PDF version:')) {
+        metadata.version = line.split(':')[1].trim();
+      }
+    });
+
+    return metadata;
+  }
+
+  parsePdfImages(pdfImagesOutput) {
+    const images = [];
+    const lines = pdfImagesOutput.split('\n').slice(2); // Saltar headers
+
+    lines.forEach(line => {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 10) {
+        images.push({
+          page: parseInt(parts[0]) || 0,
+          width: parseInt(parts[3]) || 0,
+          height: parseInt(parts[4]) || 0,
+          color: parts[5] || 'unknown',
+          bits: parts[6] || 'unknown',
+          x_ppi: parseInt(parts[8]) || 0,
+          y_ppi: parseInt(parts[9]) || 0
+        });
+      }
+    });
+
+    return images;
+  }
+
+  /**
+   * 🔧 UTILIDADES DE SOPORTE
+   */
+  async ensureDirectoryExists(dirPath) {
+    try {
+      await fs.access(dirPath);
+    } catch {
+      await fs.mkdir(dirPath, { recursive: true });
+    }
+  }
+
+  async cleanupFiles(filePaths) {
+    for (const filePath of filePaths) {
+      try {
+        await fs.unlink(filePath);
+      } catch (error) {
+        console.warn(`⚠️ No se pudo eliminar archivo temporal: ${filePath}`);
+      }
+    }
   }
 }
 
-// Instancia singleton para uso en la app
-export const pdfValidator = new PDFValidator();
+// Instancia singleton para uso en la aplicación
+const pdfValidator = new PDFValidator();
+
+export { pdfValidator, PDFValidator };
+export default pdfValidator;

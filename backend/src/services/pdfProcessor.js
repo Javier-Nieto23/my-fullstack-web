@@ -56,12 +56,39 @@ class PDFProcessor {
 
   /**
    * 🎯 MÉTODO SIMPLIFICADO: Solo conversión a escala de grises
-   * Paso a paso - implementación básica y robusta
+   * Versión mejorada con validaciones automáticas
    */
   async simpleGrayscaleOnly(inputPath, outputPath) {
-    console.log('🎯 Convirtiendo a escala de grises con 300 DPI (método Ghostscript puro)...');
+    console.log('🎯 Convirtiendo a escala de grises con 300 DPI + validaciones automáticas...');
 
     try {
+      // 🔍 PRE-VALIDACIÓN: Verificar que no sea página en blanco
+      console.log('🔍 Verificando contenido del PDF...');
+      try {
+        const { stdout: textContent } = await execAsync(`pdftotext "${inputPath}" -`);
+        const textLength = textContent.trim().length;
+        
+        if (textLength < 10) {
+          console.log('⚠️ ADVERTENCIA: PDF parece contener muy poco texto (posible OCR o página en blanco)');
+        } else {
+          console.log(`✅ PDF contiene texto suficiente (${textLength} caracteres)`);
+        }
+      } catch (err) {
+        console.log('⚠️ No se pudo analizar texto del PDF:', err.message);
+      }
+
+      // 🔍 VERIFICACIÓN: Detectar código embebido
+      try {
+        const { stdout: pdfInfo } = await execAsync(`mutool info "${inputPath}"`);
+        if (pdfInfo.toLowerCase().includes('javascript')) {
+          throw new Error('❌ PDF RECHAZADO: Contiene JavaScript embebido (no permitido)');
+        }
+        console.log('✅ PDF libre de código JavaScript');
+      } catch (err) {
+        if (err.message.includes('JavaScript')) throw err;
+        console.log('⚠️ No se pudo verificar JavaScript:', err.message);
+      }
+
       // 🔍 DIAGNÓSTICO ANTES: Ver imágenes originales
       console.log('🔍 DIAGNÓSTICO ANTES de conversión:');
       try {
@@ -71,50 +98,48 @@ class PDFProcessor {
         console.log('⚠️ No se pudo analizar imágenes originales:', err.message);
       }
 
-      // 🔄 ESTRATEGIA: Ghostscript con rasterización completa y recreación
-      console.log('🔄 Aplicando conversión completa con rasterización...');
-  const gsCommand = [
-  "gs",
-  "-sDEVICE=pdfwrite",
-  "-dNOPAUSE",
-  "-dQUIET",
-  "-dBATCH",
-  "-dSAFER",
+      // 🔄 CONVERSIÓN AUTOMÁTICA: Ghostscript con rasterización completa
+      console.log('🔄 ¡CONVERSIÓN AUTOMÁTICA! - Aplicando escala de grises 8-bit a 300 DPI...');
+      const gsCommand = [
+        "gs",
+        "-sDEVICE=pdfwrite",
+        "-dNOPAUSE",
+        "-dQUIET",
+        "-dBATCH",
+        "-dSAFER",
 
-  // 🔥 Convertir TODO a escala de grises
-  "-dProcessColorModel=/DeviceGray",
-  "-dColorConversionStrategy=/Gray",
-  "-dOverrideICC",                     // ← Ignorar perfiles ICC incrustados
-  "-dConvertCMYKImagesToRGB=true",     // ← CMYK → RGB → Gray
+        // 🔥 CONVERSIÓN AUTOMÁTICA A ESCALA DE GRISES
+        "-dProcessColorModel=/DeviceGray",
+        "-dColorConversionStrategy=/Gray",
+        "-dOverrideICC",                     // ← Ignorar perfiles ICC
+        "-dConvertCMYKImagesToRGB=true",     // ← CMYK → RGB → Gray
 
-  // 🔄 Rasterización opcional pero útil
-  "-r300",
-  "-dPDFSETTINGS=/prepress",
+        // 🔄 CONVERSIÓN AUTOMÁTICA A 300 DPI
+        "-r300",
+        "-dPDFSETTINGS=/prepress",
+        
+        // 🔧 Upsampling agresivo para DPI bajo
+        "-dUpsampleColorImages=true",
+        "-dUpsampleGrayImages=true",
+        "-dColorImageResolution=300",
+        "-dGrayImageResolution=300",
 
-  // 🔧 Forzar que TODAS las imágenes pasen por filtro
-  "-dAutoFilterColorImages=false",
-  "-dAutoFilterGrayImages=false",
-  "-dColorImageFilter=/FlateEncode",
-  "-dGrayImageFilter=/FlateEncode",
+        // 🔧 Forzar que TODAS las imágenes pasen por filtro
+        "-dAutoFilterColorImages=false",
+        "-dAutoFilterGrayImages=false",
+        "-dColorImageFilter=/FlateEncode",
+        "-dGrayImageFilter=/FlateEncode",
 
-  // 🔽 Downsampling
-  "-dDownsampleColorImages=true",
-  "-dDownsampleGrayImages=true",
-  "-dDownsampleMonoImages=true",
-  "-dColorImageDownsampleType=/Bicubic",
-  "-dGrayImageDownsampleType=/Bicubic",
-  "-dMonoImageDownsampleType=/Bicubic",
+        // 🖼 CONVERSIÓN AUTOMÁTICA A 8-BIT
+        "-dColorImageDepth=8",
+        "-dGrayImageDepth=8",
 
-  // 🖼 Profundidad
-  "-dColorImageDepth=8",
-  "-dGrayImageDepth=8",
+        // 🛠 Archivo resultante
+        `-sOutputFile=${outputPath}`,
+        inputPath
+      ].join(" ");
 
-  // 🛠 Archivo resultante
-  `-sOutputFile=${outputPath}`,
-  inputPath
-].join(" ");
-
-      console.log('🔧 Comando Ghostscript completo:', gsCommand);
+      console.log('🔧 Comando Ghostscript (CONVERSIÓN AUTOMÁTICA):', gsCommand);
       
       const startTime = Date.now();
       const { stdout: gsOutput, stderr: gsError } = await execAsync(gsCommand);
@@ -123,7 +148,7 @@ class PDFProcessor {
       if (gsOutput) console.log('📝 Salida GS:', gsOutput);
       if (gsError) console.log('⚠️ Errores GS:', gsError);
       
-      console.log(`⏱️ Tiempo de conversión: ${((endTime - startTime) / 1000).toFixed(2)}s`);
+      console.log(`⏱️ Tiempo de conversión automática: ${((endTime - startTime) / 1000).toFixed(2)}s`);
 
       // Verificar que el archivo se generó correctamente
       const stats = await fs.stat(outputPath);
@@ -131,21 +156,40 @@ class PDFProcessor {
         throw new Error('El archivo procesado está vacío');
       }
 
+      // 🔍 POST-VALIDACIÓN: Verificar que no quede como página en blanco
+      try {
+        const { stdout: finalText } = await execAsync(`pdftotext "${outputPath}" -`);
+        if (finalText.trim().length < 5) {
+          console.log('⚠️ ADVERTENCIA: PDF procesado tiene muy poco texto visible');
+        } else {
+          console.log('✅ PDF procesado mantiene contenido de texto');
+        }
+      } catch (err) {
+        console.log('⚠️ No se pudo verificar texto final:', err.message);
+      }
+
       // 🔍 DIAGNÓSTICO DESPUÉS: Ver imágenes procesadas
-      console.log('🔍 DIAGNÓSTICO DESPUÉS de conversión:');
+      console.log('🔍 DIAGNÓSTICO DESPUÉS de conversión automática:');
       try {
         const { stdout: afterImages } = await execAsync(`pdfimages -list "${outputPath}"`);
-        console.log('📊 Imágenes DESPUÉS:\n', afterImages);
+        console.log('📊 Imágenes DESPUÉS (AUTOMÁTICO):\n', afterImages);
+        
+        // Verificar que se aplicó la conversión
+        if (afterImages.includes('color') && !afterImages.includes('gray')) {
+          console.log('⚠️ ADVERTENCIA: Algunas imágenes podrían seguir en color');
+        } else {
+          console.log('✅ CONVERSIÓN EXITOSA: Imágenes convertidas a escala de grises');
+        }
       } catch (err) {
         console.log('⚠️ No se pudo analizar imágenes procesadas:', err.message);
       }
 
-      console.log(`✅ Conversión completa - Tamaño final: ${(stats.size / 1024).toFixed(2)}KB`);
+      console.log(`✅ ¡CONVERSIÓN AUTOMÁTICA COMPLETA! - Tamaño final: ${(stats.size / 1024).toFixed(2)}KB`);
       return { success: true };
 
     } catch (error) {
-      console.error('❌ Error en conversión completa:', error);
-      throw new Error(`Error en conversión: ${error.message}`);
+      console.error('❌ Error en conversión automática:', error);
+      throw new Error(`Error en conversión automática: ${error.message}`);
     }
   }
 
