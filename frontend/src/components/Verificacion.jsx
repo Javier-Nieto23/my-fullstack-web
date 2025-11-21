@@ -172,33 +172,127 @@ const Verificacion = () => {
     e.preventDefault()
     setIsDragging(false)
     const files = Array.from(e.dataTransfer.files).filter(file => file.type === 'application/pdf')
-    setSelectedFiles(files)
-    if (files.length > 0) {
-      showUploadConfirmation(files)
-    }
+    addFilesToSelection(files)
   }
 
   const handleFileChange = (e) => {
     const files = Array.from(e.target.files).filter(file => file.type === 'application/pdf')
-    setSelectedFiles(files)
-    if (files.length > 0) {
-      showUploadConfirmation(files)
+    addFilesToSelection(files)
+  }
+
+  // ===========================================
+  // NUEVAS FUNCIONES PARA MANEJO MEJORADO DE ARCHIVOS
+  // ===========================================
+  
+  const addFilesToSelection = (newFiles) => {
+    if (newFiles.length === 0) return
+    
+    // Agregar archivos únicos (evitar duplicados por nombre)
+    const existingNames = selectedFiles.map(f => f.name)
+    const uniqueFiles = newFiles.filter(file => !existingNames.includes(file.name))
+    
+    if (uniqueFiles.length === 0) {
+      Swal.fire('Información', 'Los archivos ya están seleccionados', 'info')
+      return
+    }
+    
+    const combinedFiles = [...selectedFiles, ...uniqueFiles]
+    
+    // Validar tamaño total
+    const totalSize = combinedFiles.reduce((sum, file) => sum + file.size, 0)
+    const totalMB = (totalSize / 1024 / 1024).toFixed(2)
+    
+    if (totalSize > 5 * 1024 * 1024) { // 5MB máximo
+      Swal.fire({
+        title: 'Límite excedido',
+        html: `
+          <p>El tamaño total de los archivos excede el límite de 5MB.</p>
+          <p><strong>Tamaño total:</strong> ${totalMB} MB</p>
+          <p>Por favor, selecciona menos archivos o archivos más pequeños.</p>
+        `,
+        icon: 'warning',
+        confirmButtonText: 'Entendido'
+      })
+      return
+    }
+    
+    setSelectedFiles(combinedFiles)
+    
+    // Mostrar confirmación de archivos agregados
+    if (uniqueFiles.length > 0) {
+      const message = uniqueFiles.length === 1 
+        ? `Archivo "${uniqueFiles[0].name}" agregado`
+        : `${uniqueFiles.length} archivos agregados`
+      
+      Swal.fire({
+        title: 'Archivos agregados',
+        html: `
+          <p>${message}</p>
+          <p><strong>Total de archivos:</strong> ${combinedFiles.length}</p>
+          <p><strong>Tamaño total:</strong> ${totalMB} MB / 5 MB</p>
+        `,
+        icon: 'success',
+        timer: 2000,
+        timerProgressBar: true,
+        showConfirmButton: false
+      })
     }
   }
 
-  const showUploadConfirmation = async (files) => {
+  const removeFileFromSelection = (indexToRemove) => {
+    const newFiles = selectedFiles.filter((_, index) => index !== indexToRemove)
+    setSelectedFiles(newFiles)
+    
+    Swal.fire({
+      title: 'Archivo eliminado',
+      text: 'El archivo ha sido removido de la selección',
+      icon: 'info',
+      timer: 1500,
+      showConfirmButton: false
+    })
+  }
+
+  const clearAllFiles = () => {
+    setSelectedFiles([])
+    Swal.fire({
+      title: 'Selección limpiada',
+      text: 'Todos los archivos han sido removidos',
+      icon: 'info',
+      timer: 1500,
+      showConfirmButton: false
+    })
+  }
+
+  const processSelectedFiles = async () => {
+    if (selectedFiles.length === 0) {
+      Swal.fire('Error', 'No hay archivos seleccionados para procesar', 'error')
+      return
+    }
+
+    const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0)
+    const totalMB = (totalSize / 1024 / 1024).toFixed(2)
+
     const result = await Swal.fire({
       title: 'Procesar Archivos',
-      text: `Se procesarán ${files.length} archivo(s) PDF con validaciones Ghostscript`,
-      icon: 'info',
+      html: `
+        <p>Se procesarán <strong>${selectedFiles.length}</strong> archivo(s) PDF</p>
+        <p><strong>Tamaño total:</strong> ${totalMB} MB</p>
+        <p><strong>Método:</strong> Validación y conversión con Ghostscript</p>
+        <hr>
+        <small class="text-muted">Este proceso puede tomar algunos minutos dependiendo del tamaño de los archivos</small>
+      `,
+      icon: 'question',
       showCancelButton: true,
-      confirmButtonText: 'Procesar con Backend',
+      confirmButtonText: 'Sí, Procesar',
       cancelButtonText: 'Cancelar',
-      confirmButtonColor: '#0d6efd'
+      confirmButtonColor: '#28a745',
+      cancelButtonColor: '#6c757d'
     })
 
     if (result.isConfirmed) {
-      await uploadFilesToBackend(files)
+      await uploadFilesToBackend(selectedFiles)
+      // Limpiar selección después del procesamiento exitoso
+      setSelectedFiles([])
     }
   }
 
@@ -213,6 +307,14 @@ const Verificacion = () => {
     setUploading(true)
     const token = localStorage.getItem('token')
     const processingIds = []
+
+    // Validar tamaño total antes de procesar
+    const totalValidation = validateTotalSize(files)
+    if (!totalValidation.valid) {
+      Swal.fire('Error', totalValidation.error, 'error')
+      setUploading(false)
+      return
+    }
 
     try {
       for (let file of files) {
@@ -282,10 +384,15 @@ const Verificacion = () => {
 
       if (processingIds.length > 0) {
         Swal.fire({
-          title: '¡Completado!',
-          text: 'Archivos procesados exitosamente',
+          title: '¡Procesamiento completado!',
+          html: `
+            <p><i class="bi bi-check-circle-fill text-success"></i> ${processingIds.length} archivo(s) procesado(s) exitosamente</p>
+            <p><strong>Total procesado:</strong> ${totalValidation.totalMB} MB</p>
+            <small class="text-muted">Los documentos aparecen ahora en tu lista</small>
+          `,
           icon: 'success',
-          timer: 2000
+          timer: 3000,
+          timerProgressBar: true
         })
       }
 
@@ -294,7 +401,7 @@ const Verificacion = () => {
       Swal.fire('Error', 'Error inesperado al subir archivos', 'error')
     } finally {
       setUploading(false)
-      setSelectedFiles([])
+      // No limpiar selectedFiles aquí, se limpia en processSelectedFiles tras éxito
     }
   }
 
@@ -306,10 +413,23 @@ const Verificacion = () => {
     if (file.type !== 'application/pdf') {
       return { valid: false, error: 'Solo se permiten archivos PDF' }
     }
-    if (file.size > 5 * 1024 * 1024) { // 5MB
-      return { valid: false, error: 'Archivo demasiado grande (máx. 5MB)' }
+    if (file.size > 5 * 1024 * 1024) { // 5MB por archivo individual
+      return { valid: false, error: 'Archivo individual demasiado grande (máx. 5MB)' }
     }
     return { valid: true }
+  }
+
+  const validateTotalSize = (files) => {
+    const totalSize = files.reduce((sum, file) => sum + file.size, 0)
+    if (totalSize > 5 * 1024 * 1024) {
+      const totalMB = (totalSize / 1024 / 1024).toFixed(2)
+      return { 
+        valid: false, 
+        error: `Tamaño total excede el límite (${totalMB} MB / 5 MB)`,
+        totalMB 
+      }
+    }
+    return { valid: true, totalMB: (totalSize / 1024 / 1024).toFixed(2) }
   }
 
   const deleteDocument = async (docId) => {
@@ -495,7 +615,8 @@ const Verificacion = () => {
                   textAlign: "center",
                   backgroundColor: isDragging ? "#e6f3ff" : "#f0f8ff",
                   cursor: "pointer",
-                  transition: "all 0.3s ease"
+                  transition: "all 0.3s ease",
+                  position: "relative"
                 }}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
@@ -503,17 +624,32 @@ const Verificacion = () => {
                 onClick={() => document.getElementById('fileInput').click()}
               >
                 <div style={{ fontSize: "2.5rem", color: "#17a2b8", marginBottom: "10px" }}>
-                  <i className={`bi ${isDragging ? 'bi-cloud-arrow-down-fill' : 'bi-cloud-arrow-down'}`}></i>
+                  <i className={`bi ${isDragging ? 'bi-cloud-arrow-down-fill' : selectedFiles.length > 0 ? 'bi-files' : 'bi-cloud-arrow-down'}`}></i>
                 </div>
-                <p className="mb-2">{isDragging ? 'Suelta los archivos aquí' : 'Arrastra PDF aquí'}</p>
-                <small className="text-muted">o haz clic para seleccionar múltiples PDF</small>
-                <div style={{ marginTop: "10px" }}>
-                  <small className="text-muted">
-                    {selectedFiles.length === 0
-                      ? "Tamaño máximo: 5MB por archivo"
-                      : `${selectedFiles.length} archivo(s) seleccionado(s)`}
-                  </small>
-                </div>
+                
+                {selectedFiles.length === 0 ? (
+                  <>
+                    <p className="mb-2">{isDragging ? 'Suelta los archivos aquí' : 'Arrastra PDF aquí'}</p>
+                    <small className="text-muted">o haz clic para seleccionar múltiples PDF</small>
+                    <div style={{ marginTop: "10px" }}>
+                      <small className="text-muted">Tamaño máximo total: 5MB</small>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="mb-2">
+                      <strong>{selectedFiles.length} archivo{selectedFiles.length > 1 ? 's' : ''} seleccionado{selectedFiles.length > 1 ? 's' : ''}</strong>
+                    </p>
+                    <div className="mb-2">
+                      <small className="text-muted">
+                        Tamaño total: <strong>
+                          {(selectedFiles.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(2)} MB
+                        </strong> / 5 MB
+                      </small>
+                    </div>
+                    <small className="text-muted">Haz clic para agregar más PDFs</small>
+                  </>
+                )}
               </div>
 
               <input
@@ -525,37 +661,81 @@ const Verificacion = () => {
                 onChange={handleFileChange}
               />
 
-              {/* Botones de acción */}
-              <div className="row mt-3 g-2">
-                <div className="col-6">
-                  <button 
-                    className="btn btn-primary w-100" 
-                    disabled={uploading || selectedFiles.length === 0}
-                    onClick={() => document.getElementById('fileInput').click()}
-                  >
-                    {uploading ? (
-                      <>
-                        <span className="spinner-border spinner-border-sm me-2"></span>
-                        Procesando...
-                      </>
-                    ) : (
-                      <>
-                        <i className="bi bi-cloud-upload me-2"></i>
-                        Seleccionar
-                      </>
-                    )}
-                  </button>
+              {/* Lista de archivos seleccionados */}
+              {selectedFiles.length > 0 && (
+                <div className="mt-3" style={{maxHeight: "200px", overflowY: "auto"}}>
+                  <div className="d-flex justify-content-between align-items-center mb-2">
+                    <small className="text-muted fw-bold">
+                      <i className="bi bi-files me-1"></i>
+                      Archivos a procesar:
+                    </small>
+                    <button 
+                      className="btn btn-sm btn-outline-danger"
+                      onClick={clearAllFiles}
+                      title="Limpiar todos"
+                    >
+                      <i className="bi bi-trash"></i>
+                    </button>
+                  </div>
+                  
+                  {selectedFiles.map((file, index) => (
+                    <div key={index} className="d-flex align-items-center justify-content-between p-2 mb-1 bg-light rounded">
+                      <div className="d-flex align-items-center flex-grow-1">
+                        <i className="bi bi-file-pdf text-danger me-2"></i>
+                        <div className="flex-grow-1">
+                          <div className="text-truncate" style={{maxWidth: '200px'}} title={file.name}>
+                            <small className="fw-medium">{file.name}</small>
+                          </div>
+                          <div>
+                            <small className="text-muted">{(file.size / 1024 / 1024).toFixed(2)} MB</small>
+                          </div>
+                        </div>
+                      </div>
+                      <button 
+                        className="btn btn-sm btn-outline-danger"
+                        onClick={() => removeFileFromSelection(index)}
+                        title="Eliminar archivo"
+                      >
+                        <i className="bi bi-x"></i>
+                      </button>
+                    </div>
+                  ))}
                 </div>
-                <div className="col-6">
-                  <button 
-                    className="btn btn-success w-100" 
-                    disabled={selectedFiles.length === 0}
-                    onClick={() => showUploadConfirmation(selectedFiles)}
-                  >
-                    <i className="bi bi-gear me-2"></i>
-                    Procesar
-                  </button>
-                </div>
+              )}
+
+              {/* Botón de procesar */}
+              <div className="mt-3">
+                <button 
+                  className={`btn w-100 ${selectedFiles.length === 0 ? 'btn-secondary' : 'btn-success'}`}
+                  disabled={uploading || selectedFiles.length === 0}
+                  onClick={processSelectedFiles}
+                  style={{
+                    opacity: selectedFiles.length === 0 ? 0.5 : 1,
+                    transition: "all 0.3s ease",
+                    fontSize: "1.1rem",
+                    padding: "12px 20px"
+                  }}
+                >
+                  {uploading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2"></span>
+                      Procesando archivos...
+                    </>
+                  ) : selectedFiles.length === 0 ? (
+                    <>
+                      <i className="bi bi-gear me-2"></i>
+                      Selecciona PDFs para procesar
+                    </>
+                  ) : (
+                    <>
+                      <i className="bi bi-gear me-2"></i>
+                      Procesar {selectedFiles.length} archivo{selectedFiles.length > 1 ? 's' : ''}
+                      <small className="d-block mt-1" style={{fontSize: "0.85rem", opacity: 0.9}}>
+                        {(selectedFiles.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(2)} MB total
+                      </small>
+                    </>
+                  )}
+                </button>
               </div>
 
               {/* Progreso de archivos */}
@@ -650,26 +830,52 @@ const Verificacion = () => {
         {/* Section 2: Requirements box */}
         <div className="card mb-4">
           <div className="card-header" style={{ background: "#f8f9fa", borderBottom: "1px solid #dee2e6" }}>
-            <h6 className="mb-0">Requerimientos de Documentos</h6>
+            <h6 className="mb-0">
+              <i className="bi bi-info-circle me-2"></i>
+              Requerimientos de Documentos
+            </h6>
           </div>
           <div className="card-body">
-            <ul className="reqs mb-0">
-              <li>
-                <strong>Tipo de archivo:</strong> Solo PDF.
-              </li>
-              <li>
-                <strong>Formato:</strong> Escala de grises a 8 bits.
-              </li>
-              <li>
-                <strong>Resolución:</strong> 300 DPI.
-              </li>
-              <li>
-                <strong>Tamaño máximo:</strong> 5 MB por archivo.
-              </li>
-              <li>
-                <strong>Contenido:</strong> Sin formularios ni contraseñas.
-              </li>
-            </ul>
+            <div className="row">
+              <div className="col-md-6">
+                <ul className="reqs mb-0">
+                  <li>
+                    <strong>Tipo de archivo:</strong> Solo PDF.
+                  </li>
+                  <li>
+                    <strong>Formato:</strong> Escala de grises a 8 bits.
+                  </li>
+                  <li>
+                    <strong>Resolución:</strong> 300 DPI.
+                  </li>
+                </ul>
+              </div>
+              <div className="col-md-6">
+                <ul className="reqs mb-0">
+                  <li>
+                    <strong>Tamaño individual:</strong> Máximo 5 MB por archivo.
+                  </li>
+                  <li>
+                    <strong>Tamaño total:</strong> Máximo 5 MB entre todos los archivos.
+                  </li>
+                  <li>
+                    <strong>Contenido:</strong> Sin formularios ni contraseñas.
+                  </li>
+                </ul>
+              </div>
+            </div>
+            
+            <div className="alert alert-info mt-3 mb-0" style={{background: "linear-gradient(90deg, #e3f2fd 0%, #f3e5f5 100%)", border: "1px solid #17a2b8"}}>
+              <div className="row align-items-center">
+                <div className="col-auto">
+                  <i className="bi bi-lightbulb-fill text-primary" style={{fontSize: "1.5rem"}}></i>
+                </div>
+                <div className="col">
+                  <strong>Nuevo flujo mejorado:</strong> Puedes seleccionar múltiples PDFs y acumularlos antes de procesarlos. 
+                  El botón de procesar se habilitará automáticamente cuando tengas archivos seleccionados.
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
