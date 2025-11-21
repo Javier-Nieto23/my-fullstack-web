@@ -351,6 +351,64 @@ const Verificacion = () => {
           setDocuments(prev => [newDoc, ...prev])
           updateMetrics([newDoc, ...documents])
 
+          // Verificar si hubo procesamiento automático o warnings importantes
+          const processingInfo = response.data.processing
+          const validationInfo = response.data.validation
+          
+          // Si el archivo fue procesado automáticamente, mostrar información
+          if (processingInfo?.wasProcessed) {
+            console.log('⚠️ Archivo procesado automáticamente:', processingInfo)
+            Swal.fire({
+              title: 'Archivo Procesado',
+              html: `
+                <div class="text-start">
+                  <p><i class="bi bi-gear text-warning"></i> <strong>El PDF fue convertido automáticamente</strong></p>
+                  <hr>
+                  <small class="text-muted"><strong>Detalles de la conversión:</strong></small>
+                  <ul style="font-size: 0.9em;" class="mt-2">
+                    <li><strong>Tamaño original:</strong> ${(processingInfo.originalSize / 1024 / 1024).toFixed(2)} MB</li>
+                    <li><strong>Tamaño final:</strong> ${(processingInfo.finalSize / 1024 / 1024).toFixed(2)} MB</li>
+                    <li><strong>Compresión:</strong> ${processingInfo.compressionRatio}</li>
+                    ${processingInfo.report ? `<li><strong>Optimizaciones:</strong> ${processingInfo.report}</li>` : ''}
+                  </ul>
+                  ${validationInfo?.warnings && validationInfo.warnings.length > 0 ? `
+                    <hr>
+                    <small class="text-muted"><strong>Advertencias:</strong></small>
+                    <ul style="font-size: 0.9em;" class="mt-2">
+                      ${validationInfo.warnings.map(w => `<li>${w}</li>`).join('')}
+                    </ul>
+                  ` : ''}
+                  <hr>
+                  <p class="mb-0"><small class="text-success">✅ El archivo fue procesado exitosamente y ahora cumple con las especificaciones.</small></p>
+                </div>
+              `,
+              icon: 'info',
+              confirmButtonText: 'Entendido',
+              width: '600px'
+            })
+          }
+          // Si hay warnings importantes aunque no se haya procesado
+          else if (validationInfo?.warnings && validationInfo.warnings.length > 0) {
+            console.log('⚠️ Archivo con advertencias:', validationInfo)
+            Swal.fire({
+              title: 'Archivo Procesado con Advertencias',
+              html: `
+                <div class="text-start">
+                  <p><i class="bi bi-exclamation-triangle text-warning"></i> <strong>El archivo se procesó pero tiene advertencias:</strong></p>
+                  <hr>
+                  <ul style="font-size: 0.9em;">
+                    ${validationInfo.warnings.map(w => `<li>${w}</li>`).join('')}
+                  </ul>
+                  <hr>
+                  <p class="mb-0"><small class="text-info">ℹ️ El archivo fue aceptado pero considera revisar estas advertencias.</small></p>
+                </div>
+              `,
+              icon: 'warning',
+              confirmButtonText: 'Entendido',
+              width: '600px'
+            })
+          }
+
           setTimeout(() => {
             setProcessing(prev => prev.filter(p => p.id !== tempId))
           }, 1000)
@@ -422,19 +480,8 @@ const Verificacion = () => {
         }
       }
 
-      if (processingIds.length > 0) {
-        Swal.fire({
-          title: '¡Procesamiento completado!',
-          html: `
-            <p><i class="bi bi-check-circle-fill text-success"></i> ${processingIds.length} archivo(s) procesado(s) exitosamente</p>
-            <p><strong>Total procesado:</strong> ${totalValidation.totalMB} MB</p>
-            <small class="text-muted">Los documentos aparecen ahora en tu lista</small>
-          `,
-          icon: 'success',
-          timer: 3000,
-          timerProgressBar: true
-        })
-      }
+      // No mostrar mensaje genérico de "Procesamiento completado"
+      // Los mensajes individuales ya informan sobre el estado de cada archivo
 
     } catch (error) {
       console.error('Error uploading files:', error)
