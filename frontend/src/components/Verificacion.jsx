@@ -546,6 +546,77 @@ const Verificacion = () => {
     setViewingPdf(null)
   }
 
+  const downloadPdf = async (doc) => {
+    try {
+      // Mostrar loading durante la descarga
+      Swal.fire({
+        title: 'Preparando descarga...',
+        html: `Descargando: <strong>${doc.name}</strong>`,
+        allowOutsideClick: false,
+        didOpen: () => {
+          Swal.showLoading()
+        }
+      })
+
+      const token = localStorage.getItem('token')
+      
+      // Obtener el PDF como blob desde el backend
+      const response = await axios.get(`${API_URL}/api/documents/${doc.id}/download`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        responseType: 'blob' // Importante: obtener como blob para descarga
+      })
+
+      // Crear un blob y URL temporal para descarga
+      const blob = new Blob([response.data], { type: 'application/pdf' })
+      const downloadUrl = URL.createObjectURL(blob)
+      
+      // Crear elemento temporal para descarga
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = doc.originalName || doc.name || 'documento.pdf'
+      link.style.display = 'none'
+      
+      // Agregar al DOM, hacer clic y remover
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      
+      // Limpiar URL temporal después de un momento
+      setTimeout(() => {
+        URL.revokeObjectURL(downloadUrl)
+      }, 1000)
+
+      // Cerrar loading y mostrar éxito
+      Swal.close()
+      
+      // Mostrar confirmación breve
+      Swal.fire({
+        title: '¡Descarga iniciada!',
+        html: `<i class="bi bi-download text-success"></i> ${doc.name}`,
+        icon: 'success',
+        timer: 2000,
+        timerProgressBar: true,
+        showConfirmButton: false
+      })
+
+    } catch (error) {
+      console.error('Error descargando PDF:', error)
+      Swal.close()
+      
+      if (error.response?.status === 404) {
+        Swal.fire('Error', 'Documento no encontrado en el servidor.', 'error')
+      } else if (error.response?.status === 403) {
+        Swal.fire('Error', 'No tienes permisos para descargar este documento.', 'error')
+      } else if (error.code === 'ECONNABORTED') {
+        Swal.fire('Error', 'Timeout de conexión. Intenta nuevamente.', 'error')
+      } else {
+        Swal.fire('Error', 'Error al descargar el documento. Intenta nuevamente.', 'error')
+      }
+    }
+  }
+
  if (checking) {
     return (
       <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
@@ -958,6 +1029,13 @@ const Verificacion = () => {
                               <i className="bi bi-eye"></i>
                             </button>
                             <button 
+                              className="btn btn-outline-success"
+                              onClick={() => downloadPdf(doc)}
+                              title="Descargar PDF"
+                            >
+                              <i className="bi bi-download"></i>
+                            </button>
+                            <button 
                               className="btn btn-outline-danger"
                               onClick={() => deleteDocument(doc.id)}
                               title="Eliminar"
@@ -1042,17 +1120,13 @@ const Verificacion = () => {
                 <button className="btn btn-secondary" onClick={() => closePdfViewer()}>
                   Cerrar
                 </button>
-                {viewingPdf.downloadUrl && (
-                  <button 
-                    className="btn btn-success"
-                    onClick={() => {
-                      const downloadUrl = `${API_URL}${viewingPdf.downloadUrl}`
-                      window.open(downloadUrl, '_blank')
-                    }}
-                  >
-                    <i className="bi bi-download me-1"></i>Descargar PDF
-                  </button>
-                )}
+                <button 
+                  className="btn btn-success"
+                  onClick={() => downloadPdf(viewingPdf)}
+                  title="Descargar este PDF"
+                >
+                  <i className="bi bi-download me-1"></i>Descargar PDF
+                </button>
               </div>
             </div>
           </div>
