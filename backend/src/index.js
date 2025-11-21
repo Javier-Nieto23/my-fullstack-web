@@ -349,26 +349,35 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
     console.log(`✅ Archivo subido exitosamente a R2: ${uploadResult.key}`)
 
     // 5️⃣ GUARDAR EN BASE DE DATOS CON INFORMACIÓN DE USUARIO
+    // Preparar datos base (compatibilidad con versiones anteriores)
+    const documentData = {
+      name: fileName,
+      originalName: originalname,
+      size: finalBuffer.length, // Tamaño del archivo final
+      status: documentStatus,
+      userId: userId,
+      company: user.nombre,
+      uploadDate: new Date(),
+      processedAt: documentStatus === 'processed' ? new Date() : null,
+      filePath: uploadResult.key
+    };
+
+    // Agregar campos nuevos solo si existen en el schema (después de migración)
+    try {
+      documentData.wasProcessed = wasProcessed;
+      documentData.validationInfo = JSON.stringify({
+        summary: validationResult.summary,
+        errors: validationResult.errors || [],
+        warnings: validationResult.warnings || [],
+        checks: validationResult.checks || {}
+      });
+      documentData.errorReason = errorReason;
+    } catch (e) {
+      console.log('⚠️ Campos de validación no disponibles aún (migración pendiente)');
+    }
+
     const document = await prisma.document.create({
-      data: {
-        name: fileName,
-        originalName: originalname,
-        size: finalBuffer.length, // Tamaño del archivo final
-        status: documentStatus,
-        userId: userId,
-        company: user.nombre,
-        uploadDate: new Date(),
-        processedAt: documentStatus === 'processed' ? new Date() : null,
-        filePath: uploadResult.key,
-        wasProcessed: wasProcessed,
-        validationInfo: JSON.stringify({
-          summary: validationResult.summary,
-          errors: validationResult.errors || [],
-          warnings: validationResult.warnings || [],
-          checks: validationResult.checks || {}
-        }),
-        errorReason: errorReason
-      }
+      data: documentData
     })
 
     console.log(`✅ Documento guardado en BD: ${document.id} para usuario: ${user.nombre}`)
@@ -389,9 +398,9 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
         uploadDate: document.uploadDate,
         company: document.company,
         fileUrl: `/api/documents/${document.id}/view`,
-        wasProcessed: document.wasProcessed,
-        errorReason: document.errorReason,
-        validationInfo: document.validationInfo
+        wasProcessed: document.wasProcessed || wasProcessed,
+        errorReason: document.errorReason || null,
+        validationInfo: document.validationInfo || null
       },
       processing: {
         wasProcessed: wasProcessed,
