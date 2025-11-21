@@ -305,12 +305,13 @@ class PDFValidator {
     }
 
     // 🚨 VALIDACIÓN CRÍTICA: PDF COMPLETAMENTE EN BLANCO
-    const isCompletelyBlank = this.validateBlankPDF(textContent, hasImages, results.metadata.pages);
+    const blankValidation = this.validateBlankPDF(textContent, hasImages, results.metadata.pages);
     
-    if (isCompletelyBlank) {
+    if (blankValidation.isBlank) {
       results.hasBlankPages = true;
-      results.errors.push('No se permite PDF en blanco');
-      console.log('❌ PDF RECHAZADO: Está completamente en blanco');
+      results.blankReason = blankValidation.reason;
+      results.errors.push('ERROR: PDF con páginas en blanco');
+      console.log(`❌ PDF RECHAZADO: ${blankValidation.reason}`);
       return;
     }
 
@@ -353,39 +354,56 @@ class PDFValidator {
     console.log(`📷 Tiene imágenes: ${hasImages}`);
     console.log(`📖 Páginas: ${pageCount}`);
 
-    // ❌ CRITERIOS PARA RECHAZAR PDF EN BLANCO:
+    // ❌ CRITERIOS MEJORADOS PARA RECHAZAR PDF EN BLANCO:
     
     // 1. No tiene texto significativo Y no tiene imágenes
     if (cleanText.length === 0 && !hasImages) {
-      console.log('❌ Criterio 1: Sin texto y sin imágenes');
-      return true;
+      console.log('❌ Criterio 1: Sin texto y sin imágenes - PDF completamente en blanco');
+      return { isBlank: true, reason: 'El PDF no contiene texto ni imágenes' };
     }
     
-    // 2. Solo tiene caracteres de formato/espacios (menos de 10 caracteres reales)
-    if (cleanText.length > 0 && cleanText.length < 10 && !hasImages) {
+    // 2. Solo tiene caracteres de formato/espacios (menos de 15 caracteres reales)
+    if (cleanText.length > 0 && cleanText.length < 15 && !hasImages) {
       console.log('❌ Criterio 2: Texto insignificante y sin imágenes');
-      return true;
+      return { isBlank: true, reason: 'El PDF contiene texto insuficiente y no tiene imágenes' };
     }
 
-    // 3. Solo contiene caracteres repetitivos (espacios, puntos, guiones)
-    const meaningfulChars = cleanText.replace(/[\s\.\-_\|]+/g, '');
-    if (meaningfulChars.length < 5 && !hasImages) {
+    // 3. Solo contiene caracteres repetitivos o de formato
+    const meaningfulChars = cleanText.replace(/[\s\.\-_\|\,\;\:\!\?\(\)\[\]\{\}]+/g, '');
+    if (meaningfulChars.length < 8 && !hasImages) {
       console.log('❌ Criterio 3: Solo caracteres repetitivos sin contenido real');
-      return true;
+      return { isBlank: true, reason: 'El PDF solo contiene caracteres de formato sin contenido significativo' };
     }
 
-    // 4. PDF con muchas páginas pero contenido mínimo (menos de 3 caracteres por página)
+    // 4. Verificar si el texto contiene solo números o caracteres alfanuméricos mínimos
+    const alphanumericContent = cleanText.replace(/[^a-zA-Z0-9]/g, '');
+    if (alphanumericContent.length < 10 && !hasImages) {
+      console.log('❌ Criterio 4: Contenido alfanumérico insuficiente');
+      return { isBlank: true, reason: 'El PDF no contiene suficiente contenido alfanumérico' };
+    }
+
+    // 5. PDF con muchas páginas pero contenido mínimo (menos de 5 caracteres por página)
     if (pageCount && pageCount > 1) {
       const contentPerPage = cleanText.length / pageCount;
-      if (contentPerPage < 3 && !hasImages) {
-        console.log(`❌ Criterio 4: Contenido insuficiente por página (${contentPerPage.toFixed(1)} chars/page)`);
-        return true;
+      if (contentPerPage < 5 && !hasImages) {
+        console.log(`❌ Criterio 5: Contenido insuficiente por página (${contentPerPage.toFixed(1)} chars/page)`);
+        return { isBlank: true, reason: `El PDF tiene contenido insuficiente por página (${contentPerPage.toFixed(1)} caracteres/página)` };
+      }
+    }
+
+    // 6. Verificar patrones de páginas escaneadas en blanco
+    if (cleanText.length < 30 && hasImages) {
+      // Si tiene imágenes pero muy poco texto, puede ser una página escaneada en blanco
+      const wordCount = cleanText.split(/\s+/).filter(word => word.length > 2).length;
+      if (wordCount < 3) {
+        console.log('❌ Criterio 6: Páginas escaneadas aparentemente en blanco');
+        return { isBlank: true, reason: 'El PDF parece contener páginas escaneadas en blanco o con contenido no legible' };
       }
     }
 
     // ✅ PDF tiene contenido suficiente
     console.log('✅ PDF contiene contenido suficiente, no está en blanco');
-    return false;
+    return { isBlank: false, reason: null };
   }
 
   /**
@@ -468,7 +486,7 @@ class PDFValidator {
       !results.hasJavaScript &&
       !results.hasBlankPages &&
       !results.errors.some(error => error.includes('contraseña')) &&
-      !results.errors.some(error => error.includes('PDF en blanco'));
+      !results.errors.some(error => error.includes('páginas en blanco'));
 
     // Un PDF es válido si cumple TODAS las especificaciones
     results.valid = 
@@ -480,7 +498,7 @@ class PDFValidator {
     if (results.valid) {
       results.summary = '✅ PDF cumple todas las especificaciones';
     } else if (results.hasBlankPages) {
-      results.summary = '❌ PDF rechazado: está completamente en blanco';
+      results.summary = `❌ ERROR: PDF con páginas en blanco - ${results.blankReason || 'Contenido insuficiente'}`;
     } else if (results.isProcessable) {
       results.summary = '🔄 PDF es procesable pero requiere conversión automática';
     } else {

@@ -314,6 +314,27 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
     // Si aún no pasa validación final Y no fue procesado, rechazar
     if (!validationResult.valid && !wasProcessed) {
       console.log('❌ PDF rechazado: no válido y no procesado')
+      
+      // Verificar si es un error específico de páginas en blanco
+      const hasBlankPagesError = validationResult.hasBlankPages || 
+                                validationResult.errors.some(error => error.includes('páginas en blanco'));
+      
+      if (hasBlankPagesError) {
+        return res.status(400).json({
+          error: 'ERROR: PDF con páginas en blanco',
+          errorType: 'BLANK_PAGES',
+          message: validationResult.blankReason || 'No se permite PDF con páginas en blanco',
+          wasProcessed: wasProcessed,
+          details: {
+            summary: validationResult.summary,
+            errors: validationResult.errors,
+            warnings: validationResult.warnings,
+            checks: validationResult.checks,
+            blankReason: validationResult.blankReason
+          }
+        });
+      }
+      
       return res.status(400).json({
         error: 'PDF no cumple con las especificaciones requeridas y no puede ser procesado automáticamente',
         wasProcessed: wasProcessed,

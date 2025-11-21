@@ -360,6 +360,8 @@ const Verificacion = () => {
           console.error('Upload error:', error)
           
           let errorMessage = 'Error al procesar el archivo'
+          let errorTitle = 'Error'
+          let errorIcon = 'error'
           
           if (error.code === 'ECONNABORTED') {
             errorMessage = 'Timeout de conexión. El archivo tardó demasiado en subirse.'
@@ -372,10 +374,26 @@ const Verificacion = () => {
           } else if (!error.response) {
             errorMessage = `Error de conexión: ${error.message}. API URL: ${API_URL}`
           } else {
-            errorMessage = error.response?.data?.error || error.message
+            // Verificar si es un error específico de páginas en blanco
+            const errorData = error.response?.data
+            if (errorData?.errorType === 'BLANK_PAGES' || 
+                errorData?.error?.includes('páginas en blanco') ||
+                errorData?.error?.includes('PDF en blanco')) {
+              errorTitle = 'PDF con Páginas en Blanco'
+              errorMessage = `ERROR: PDF con páginas en blanco\n\n${errorData?.message || errorData?.details?.blankReason || 'No se permite subir PDFs con páginas en blanco o contenido insuficiente.'}`
+              errorIcon = 'warning'
+            } else {
+              errorMessage = errorData?.error || error.message
+            }
           }
           
-          Swal.fire('Error', errorMessage, 'error')
+          Swal.fire({
+            title: errorTitle,
+            text: errorMessage,
+            icon: errorIcon,
+            confirmButtonText: 'Entendido',
+            confirmButtonColor: errorIcon === 'warning' ? '#f39c12' : '#d33'
+          })
         }
       }
 
@@ -413,6 +431,15 @@ const Verificacion = () => {
     if (file.size > 5 * 1024 * 1024) { // 5MB por archivo individual
       return { valid: false, error: 'Archivo individual demasiado grande (máx. 5MB)' }
     }
+    
+    // Validación adicional: archivos muy pequeños podrían estar en blanco
+    if (file.size < 1024) { // Menos de 1KB
+      return { 
+        valid: false, 
+        error: 'ERROR: PDF con páginas en blanco - El archivo es demasiado pequeño y posiblemente esté vacío' 
+      }
+    }
+    
     return { valid: true }
   }
 
