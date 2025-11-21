@@ -358,10 +358,14 @@ const Verificacion = () => {
         } catch (error) {
           setProcessing(prev => prev.filter(p => p.id !== tempId))
           console.error('Upload error:', error)
+          console.error('Error response:', error.response?.data)
+          console.error('Error status:', error.response?.status)
           
           let errorMessage = 'Error al procesar el archivo'
           let errorTitle = 'Error'
           let errorIcon = 'error'
+          let showDetails = false
+          let errorDetails = ''
           
           if (error.code === 'ECONNABORTED') {
             errorMessage = 'Timeout de conexión. El archivo tardó demasiado en subirse.'
@@ -376,6 +380,7 @@ const Verificacion = () => {
           } else {
             // Verificar si es un error específico de páginas en blanco
             const errorData = error.response?.data
+            
             if (errorData?.errorType === 'BLANK_PAGES' || 
                 errorData?.error?.includes('páginas en blanco') ||
                 errorData?.error?.includes('PDF en blanco')) {
@@ -384,15 +389,35 @@ const Verificacion = () => {
               errorIcon = 'warning'
             } else {
               errorMessage = errorData?.error || error.message
+              
+              // Si hay detalles adicionales del error, mostrarlos
+              if (errorData?.details) {
+                showDetails = true
+                errorDetails = `
+                  <div class="mt-3 text-start">
+                    <small class="text-muted"><strong>Detalles del error:</strong></small>
+                    <ul class="mt-2" style="font-size: 0.9em;">
+                      ${errorData.details.summary ? `<li><strong>Resumen:</strong> ${errorData.details.summary}</li>` : ''}
+                      ${errorData.details.errors && errorData.details.errors.length > 0 ? 
+                        `<li><strong>Errores:</strong><ul>${errorData.details.errors.map(e => `<li>${e}</li>`).join('')}</ul></li>` 
+                        : ''}
+                      ${errorData.details.warnings && errorData.details.warnings.length > 0 ? 
+                        `<li><strong>Advertencias:</strong><ul>${errorData.details.warnings.map(w => `<li>${w}</li>`).join('')}</ul></li>` 
+                        : ''}
+                    </ul>
+                  </div>
+                `
+              }
             }
           }
           
           Swal.fire({
             title: errorTitle,
-            text: errorMessage,
+            html: showDetails ? `<p>${errorMessage}</p>${errorDetails}` : errorMessage,
             icon: errorIcon,
             confirmButtonText: 'Entendido',
-            confirmButtonColor: errorIcon === 'warning' ? '#f39c12' : '#d33'
+            confirmButtonColor: errorIcon === 'warning' ? '#f39c12' : '#d33',
+            width: showDetails ? '600px' : undefined
           })
         }
       }
