@@ -10,12 +10,8 @@
       }
     }
   ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "frontend/dist/index.html"
-    }
-  ],
+  
+  
   "buildCommand": "cd frontend && npm run build",
   "outputDirectory": "frontend/dist",
   "installCommand": "cd frontend && npm install",
