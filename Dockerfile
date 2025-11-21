@@ -27,14 +27,11 @@ RUN echo "🔍 Verificando herramientas PDF instaladas:" && \
 # Copiar archivos de dependencias del backend
 COPY backend/package*.json ./
 
-# Instalar dependencias del backend
+# Copiar prisma schema y migraciones ANTES de instalar
+COPY backend/prisma ./prisma
+
+# Instalar dependencias del backend (ahora ejecutará postinstall con prisma generate)
 RUN npm install
-
-# Copiar prisma schema y migraciones
-COPY prisma ./prisma
-
-# Generar cliente Prisma
-RUN npx prisma generate
 
 # Copiar código fuente del backend
 COPY backend/src ./src
