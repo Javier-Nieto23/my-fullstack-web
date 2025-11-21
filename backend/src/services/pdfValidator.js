@@ -260,6 +260,7 @@ class PDFValidator {
     
     let textContent = '';
     let extractionMethod = 'none';
+    let hasImages = false;
 
     // 🔄 Método 1: Intentar con pdftotext (más confiable)
     try {
@@ -294,6 +295,25 @@ class PDFValidator {
       }
     }
 
+    // 🔍 Verificar si el PDF tiene imágenes
+    try {
+      const { stdout: imagesOutput } = await execAsync(`pdfimages -list "${filePath}"`);
+      hasImages = imagesOutput && imagesOutput.trim().length > 0 && imagesOutput.includes('page');
+      console.log(`📷 Verificación de imágenes: ${hasImages ? 'Tiene imágenes' : 'Sin imágenes detectadas'}`);
+    } catch (error) {
+      console.log('⚠️ No se pudo verificar imágenes en el PDF');
+    }
+
+    // 🚨 VALIDACIÓN CRÍTICA: PDF COMPLETAMENTE EN BLANCO
+    const isCompletelyBlank = this.validateBlankPDF(textContent, hasImages, results.metadata.pages);
+    
+    if (isCompletelyBlank) {
+      results.hasBlankPages = true;
+      results.errors.push('No se permite PDF en blanco');
+      console.log('❌ PDF RECHAZADO: Está completamente en blanco');
+      return;
+    }
+
     // 📊 Análizar contenido de texto si se obtuvo
     if (textContent.length > 0) {
       const pageCount = results.metadata.pages || 1;
@@ -307,18 +327,65 @@ class PDFValidator {
         results.warnings.push('PDF parece contener páginas escaneadas o con poco texto (posible OCR)');
       }
 
-      // Detectar páginas completamente vacías
-      if (textContent.length === 0) {
-        results.hasBlankPages = true;
-        results.warnings.push('PDF parece contener solo páginas en blanco o imágenes');
-      } else {
-        console.log(`✅ PDF contiene texto suficiente (${textContent.length} caracteres)`);
-      }
+      console.log(`✅ PDF contiene contenido válido (${textContent.length} caracteres)`);
     } else if (extractionMethod === 'basic-info') {
       // Si solo tenemos info básica, asumimos que el PDF tiene contenido
       console.log('ℹ️ Usando análisis básico - asumiendo PDF con contenido');
       results.warnings.push('Análisis de texto limitado - usando validación básica');
     }
+  }
+
+  /**
+   * 🚨 VALIDACIÓN ESTRICTA DE PDF EN BLANCO
+   * Esta función determina si un PDF está completamente vacío y debe ser rechazado
+   */
+  validateBlankPDF(textContent, hasImages, pageCount) {
+    console.log('🔍 Validando si el PDF está en blanco...');
+    
+    // Limpiar y normalizar el texto extraído
+    const cleanText = textContent
+      .replace(/\s+/g, ' ')        // Normalizar espacios
+      .replace(/\n+/g, '\n')       // Normalizar saltos de línea
+      .replace(/[^\w\s]/g, '')     // Remover caracteres especiales
+      .trim();
+
+    console.log(`📝 Texto limpio: "${cleanText.substring(0, 100)}..." (${cleanText.length} caracteres)`);
+    console.log(`📷 Tiene imágenes: ${hasImages}`);
+    console.log(`📖 Páginas: ${pageCount}`);
+
+    // ❌ CRITERIOS PARA RECHAZAR PDF EN BLANCO:
+    
+    // 1. No tiene texto significativo Y no tiene imágenes
+    if (cleanText.length === 0 && !hasImages) {
+      console.log('❌ Criterio 1: Sin texto y sin imágenes');
+      return true;
+    }
+    
+    // 2. Solo tiene caracteres de formato/espacios (menos de 10 caracteres reales)
+    if (cleanText.length > 0 && cleanText.length < 10 && !hasImages) {
+      console.log('❌ Criterio 2: Texto insignificante y sin imágenes');
+      return true;
+    }
+
+    // 3. Solo contiene caracteres repetitivos (espacios, puntos, guiones)
+    const meaningfulChars = cleanText.replace(/[\s\.\-_\|]+/g, '');
+    if (meaningfulChars.length < 5 && !hasImages) {
+      console.log('❌ Criterio 3: Solo caracteres repetitivos sin contenido real');
+      return true;
+    }
+
+    // 4. PDF con muchas páginas pero contenido mínimo (menos de 3 caracteres por página)
+    if (pageCount && pageCount > 1) {
+      const contentPerPage = cleanText.length / pageCount;
+      if (contentPerPage < 3 && !hasImages) {
+        console.log(`❌ Criterio 4: Contenido insuficiente por página (${contentPerPage.toFixed(1)} chars/page)`);
+        return true;
+      }
+    }
+
+    // ✅ PDF tiene contenido suficiente
+    console.log('✅ PDF contiene contenido suficiente, no está en blanco');
+    return false;
   }
 
   /**
@@ -394,11 +461,14 @@ class PDFValidator {
     // 1. Tiene estructura básica válida
     // 2. No tiene JavaScript (bloqueante)
     // 3. No está protegido con contraseña (bloqueante)
+    // 4. No está completamente en blanco (bloqueante)
     
     results.isProcessable = 
       results.checks.basicStructure && 
       !results.hasJavaScript &&
-      !results.errors.some(error => error.includes('contraseña'));
+      !results.hasBlankPages &&
+      !results.errors.some(error => error.includes('contraseña')) &&
+      !results.errors.some(error => error.includes('PDF en blanco'));
 
     // Un PDF es válido si cumple TODAS las especificaciones
     results.valid = 
@@ -409,6 +479,8 @@ class PDFValidator {
     // Generar resumen
     if (results.valid) {
       results.summary = '✅ PDF cumple todas las especificaciones';
+    } else if (results.hasBlankPages) {
+      results.summary = '❌ PDF rechazado: está completamente en blanco';
     } else if (results.isProcessable) {
       results.summary = '🔄 PDF es procesable pero requiere conversión automática';
     } else {
@@ -428,6 +500,9 @@ class PDFValidator {
       `🎯 ESTADO FINAL: ${results.summary}`,
       `✅ Válido: ${results.valid ? 'SÍ' : 'NO'}`,
       `🔄 Procesable: ${results.isProcessable ? 'SÍ' : 'NO'}`,
+      `📄 PDF en Blanco: ${results.hasBlankPages ? 'SÍ' : 'NO'}`,
+      `🔍 Contiene OCR: ${results.hasOCR ? 'SÍ' : 'NO'}`,
+      `⚠️ JavaScript: ${results.hasJavaScript ? 'SÍ' : 'NO'}`,
       ''
     ];
 
