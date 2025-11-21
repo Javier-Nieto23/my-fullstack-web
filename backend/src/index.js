@@ -311,40 +311,24 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
 
     console.log(`📋 Estado final antes de verificaciones: wasProcessed=${wasProcessed}, valid=${validationResult.valid}`)
 
-    // Si aún no pasa validación final Y no fue procesado, rechazar
+    // Variable para determinar el estado del documento
+    let documentStatus = 'processed';
+    let errorReason = null;
+    
+    // Si aún no pasa validación final Y no fue procesado, guardar como non_compliant
     if (!validationResult.valid && !wasProcessed) {
-      console.log('❌ PDF rechazado: no válido y no procesado')
+      console.log('⚠️ PDF no cumple especificaciones - guardando como non_compliant')
+      documentStatus = 'non_compliant';
       
       // Verificar si es un error específico de páginas en blanco
       const hasBlankPagesError = validationResult.hasBlankPages || 
                                 validationResult.errors.some(error => error.includes('páginas en blanco'));
       
       if (hasBlankPagesError) {
-        return res.status(400).json({
-          error: 'ERROR: PDF con páginas en blanco',
-          errorType: 'BLANK_PAGES',
-          message: validationResult.blankReason || 'No se permite PDF con páginas en blanco',
-          wasProcessed: wasProcessed,
-          details: {
-            summary: validationResult.summary,
-            errors: validationResult.errors,
-            warnings: validationResult.warnings,
-            checks: validationResult.checks,
-            blankReason: validationResult.blankReason
-          }
-        });
+        errorReason = `ERROR: PDF con páginas en blanco - ${validationResult.blankReason || 'No se permite PDF con páginas en blanco'}`;
+      } else {
+        errorReason = validationResult.summary || 'PDF no cumple con las especificaciones requeridas';
       }
-      
-      return res.status(400).json({
-        error: 'PDF no cumple con las especificaciones requeridas y no puede ser procesado automáticamente',
-        wasProcessed: wasProcessed,
-        details: {
-          summary: validationResult.summary,
-          errors: validationResult.errors,
-          warnings: validationResult.warnings,
-          checks: validationResult.checks
-        }
-      })
     }
 
     console.log('✅ PDF aprobado para almacenamiento')
@@ -370,12 +354,20 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
         name: fileName,
         originalName: originalname,
         size: finalBuffer.length, // Tamaño del archivo final
-        status: 'processed',
+        status: documentStatus,
         userId: userId,
-        company: user.nombre, // ✅ USAR NOMBRE DEL USUARIO EN LUGAR DE "Empresa Demo"
+        company: user.nombre,
         uploadDate: new Date(),
-        processedAt: new Date(),
-        filePath: uploadResult.key
+        processedAt: documentStatus === 'processed' ? new Date() : null,
+        filePath: uploadResult.key,
+        wasProcessed: wasProcessed,
+        validationInfo: JSON.stringify({
+          summary: validationResult.summary,
+          errors: validationResult.errors || [],
+          warnings: validationResult.warnings || [],
+          checks: validationResult.checks || {}
+        }),
+        errorReason: errorReason
       }
     })
 
@@ -383,7 +375,11 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
 
     res.status(201).json({
       success: true,
-      message: wasProcessed ? '🔄 PDF procesado y almacenado exitosamente' : '✅ PDF validado y almacenado exitosamente',
+      message: documentStatus === 'non_compliant' 
+        ? '⚠️ PDF guardado pero no cumple especificaciones'
+        : wasProcessed 
+          ? '🔄 PDF procesado y almacenado exitosamente' 
+          : '✅ PDF validado y almacenado exitosamente',
       document: {
         id: document.id,
         name: document.name,
@@ -392,7 +388,10 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
         size: document.size,
         uploadDate: document.uploadDate,
         company: document.company,
-        fileUrl: `/api/documents/${document.id}/view`
+        fileUrl: `/api/documents/${document.id}/view`,
+        wasProcessed: document.wasProcessed,
+        errorReason: document.errorReason,
+        validationInfo: document.validationInfo
       },
       processing: {
         wasProcessed: wasProcessed,
@@ -404,7 +403,8 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
       validation: {
         summary: validationResult.summary,
         warnings: validationResult.warnings,
-        details: validationResult.checks
+        details: validationResult.checks,
+        errors: validationResult.errors
       },
       storage: {
         provider: 'Cloudflare R2',

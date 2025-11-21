@@ -351,12 +351,46 @@ const Verificacion = () => {
           setDocuments(prev => [newDoc, ...prev])
           updateMetrics([newDoc, ...documents])
 
-          // Verificar si hubo procesamiento automático o warnings importantes
+          // Verificar el estado del documento
           const processingInfo = response.data.processing
           const validationInfo = response.data.validation
           
+          // Si el documento no cumple especificaciones
+          if (newDoc.status === 'non_compliant') {
+            console.log('⚠️ Documento no cumplió especificaciones:', newDoc)
+            Swal.fire({
+              title: 'Documento No Cumplido',
+              html: `
+                <div class="text-start">
+                  <p><i class="bi bi-exclamation-triangle text-danger"></i> <strong>El PDF no cumple con las especificaciones requeridas</strong></p>
+                  <hr>
+                  <small class="text-muted"><strong>Razón del rechazo:</strong></small>
+                  <p style="font-size: 0.9em;" class="mt-2">${newDoc.errorReason || 'No se pudo procesar el archivo'}</p>
+                  ${validationInfo?.errors && validationInfo.errors.length > 0 ? `
+                    <hr>
+                    <small class="text-muted"><strong>Errores detectados:</strong></small>
+                    <ul style="font-size: 0.9em;" class="mt-2">
+                      ${validationInfo.errors.map(e => `<li>${e}</li>`).join('')}
+                    </ul>
+                  ` : ''}
+                  ${validationInfo?.warnings && validationInfo.warnings.length > 0 ? `
+                    <hr>
+                    <small class="text-muted"><strong>Advertencias:</strong></small>
+                    <ul style="font-size: 0.9em;" class="mt-2">
+                      ${validationInfo.warnings.map(w => `<li>${w}</li>`).join('')}
+                    </ul>
+                  ` : ''}
+                  <hr>
+                  <p class="mb-0"><small class="text-info">ℹ️ El archivo fue guardado y puedes verlo haciendo clic en él desde la lista de documentos.</small></p>
+                </div>
+              `,
+              icon: 'warning',
+              confirmButtonText: 'Entendido',
+              width: '600px'
+            })
+          }
           // Si el archivo fue procesado automáticamente, mostrar información
-          if (processingInfo?.wasProcessed) {
+          else if (processingInfo?.wasProcessed) {
             console.log('⚠️ Archivo procesado automáticamente:', processingInfo)
             Swal.fire({
               title: 'Archivo Procesado',
@@ -558,6 +592,53 @@ const Verificacion = () => {
 
   const viewPdf = async (doc) => {
     try {
+      // Si es un documento no cumplido, mostrar primero los detalles del error
+      if (doc.status === 'non_compliant') {
+        let validationInfo = {};
+        try {
+          validationInfo = doc.validationInfo ? JSON.parse(doc.validationInfo) : {};
+        } catch (e) {
+          console.error('Error parsing validationInfo:', e);
+        }
+
+        const result = await Swal.fire({
+          title: 'Documento No Cumplido',
+          html: `
+            <div class="text-start">
+              <p><i class="bi bi-exclamation-triangle text-danger"></i> <strong>Este PDF no cumple con las especificaciones</strong></p>
+              <hr>
+              <small class="text-muted"><strong>Razón del rechazo:</strong></small>
+              <p style="font-size: 0.9em;" class="mt-2">${doc.errorReason || 'No especificado'}</p>
+              ${validationInfo.errors && validationInfo.errors.length > 0 ? `
+                <hr>
+                <small class="text-muted"><strong>Errores detectados:</strong></small>
+                <ul style="font-size: 0.9em;" class="mt-2">
+                  ${validationInfo.errors.map(e => `<li>${e}</li>`).join('')}
+                </ul>
+              ` : ''}
+              ${validationInfo.warnings && validationInfo.warnings.length > 0 ? `
+                <hr>
+                <small class="text-muted"><strong>Advertencias:</strong></small>
+                <ul style="font-size: 0.9em;" class="mt-2">
+                  ${validationInfo.warnings.map(w => `<li>${w}</li>`).join('')}
+                </ul>
+              ` : ''}
+              <hr>
+              <p class="mb-0"><small class="text-info">¿Deseas ver el archivo de todas formas?</small></p>
+            </div>
+          `,
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonText: 'Sí, ver PDF',
+          cancelButtonText: 'Cerrar',
+          width: '600px'
+        });
+
+        if (!result.isConfirmed) {
+          return;
+        }
+      }
+
       if (!doc.fileUrl) {
         Swal.fire('Error', 'No se puede mostrar el documento. Archivo no disponible.', 'error')
         return

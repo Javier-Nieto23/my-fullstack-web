@@ -27,21 +27,27 @@ model User {
 }
 
 model Document {
-  id           Int      @id @default(autoincrement())
-  name         String
-  originalName String
-  size         Int
-  status       String   // 'processed', 'sent', 'non_compliant'
-  company      String
-  uploadDate   DateTime @default(now())
-  processedAt  DateTime?
-  filePath     String?  // Ruta del archivo en el servidor
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id              Int      @id @default(autoincrement())
+  name            String
+  originalName    String
+  size            Int
+  status          String   // 'processed', 'sent', 'non_compliant'
+  company         String
+  uploadDate      DateTime @default(now())
+  processedAt     DateTime?
+  filePath        String?  // Ruta del archivo en el servidor
+  
+  // Información de validación y procesamiento
+  wasProcessed    Boolean  @default(false)  // Si fue convertido automáticamente
+  validationInfo  String?  @db.Text         // JSON con detalles de validación
+  errorReason     String?  @db.Text         // Razón del rechazo si es non_compliant
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
   
   // Relación con usuario
-  userId       Int
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          Int
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   
   @@index([userId])
 }
