@@ -534,7 +534,21 @@ const Verificacion = () => {
     setViewingPdf(null)
   }
 
-  if (checking) return null
+  if (checking) {
+    return (
+      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
+        <div className="text-center">
+          <div className="spinner-border text-primary" role="status" style={{ width: '3rem', height: '3rem' }}>
+            <span className="visually-hidden">Cargando...</span>
+          </div>
+          <div className="mt-3">
+            <h5 className="text-muted">Verificando sesión...</h5>
+            <p className="text-muted mb-0">Por favor, espera un momento</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
   
   return (
     <div>

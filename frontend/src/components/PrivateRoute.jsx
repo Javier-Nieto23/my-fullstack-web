@@ -20,7 +20,20 @@ const PrivateRoute = ({ children }) => {
     setChecking(false)
   }, [])
 
-  if (checking) return null // or a spinner
+  if (checking) {
+    return (
+      <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
+        <div className="text-center">
+          <div className="spinner-border text-primary" role="status" style={{ width: '2rem', height: '2rem' }}>
+            <span className="visually-hidden">Verificando...</span>
+          </div>
+          <div className="mt-2">
+            <small className="text-muted">Verificando acceso...</small>
+          </div>
+        </div>
+      </div>
+    )
+  }
   if (!allowed) return <Navigate to="/" replace />
   return children
 }
