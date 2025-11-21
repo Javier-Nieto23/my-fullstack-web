@@ -32,7 +32,7 @@ const Verificacion = () => {
     misEmpresas: 0
   })
 
-  // Estados para visualización de PDF
+  // Estado para visualización de PDF
   const [viewingPdf, setViewingPdf] = useState(null)
 
   // ===========================================
@@ -372,19 +372,7 @@ const Verificacion = () => {
           } else if (!error.response) {
             errorMessage = `Error de conexión: ${error.message}. API URL: ${API_URL}`
           } else {
-            // Manejar errores específicos del validador PDF
-            const responseError = error.response?.data?.error || error.message
-            const errorDetails = error.response?.data?.details
-
-            if (responseError.includes('PDF en blanco') || errorDetails?.errors?.some(err => err.includes('PDF en blanco'))) {
-              errorMessage = 'No se permite PDF en blanco. Por favor, selecciona un documento con contenido.'
-            } else if (responseError.includes('OCR escaneado')) {
-              errorMessage = 'PDF rechazado: Contiene texto escaneado (OCR) que no es procesable.'
-            } else if (responseError.includes('elementos prohibidos')) {
-              errorMessage = 'PDF rechazado: El documento contiene elementos que no pueden ser procesados.'
-            } else {
-              errorMessage = responseError
-            }
+            errorMessage = error.response?.data?.error || error.message
           }
           
           Swal.fire('Error', errorMessage, 'error')
@@ -424,9 +412,6 @@ const Verificacion = () => {
     }
     if (file.size > 5 * 1024 * 1024) { // 5MB por archivo individual
       return { valid: false, error: 'Archivo individual demasiado grande (máx. 5MB)' }
-    }
-    if (file.size < 1024) { // Menos de 1KB probablemente está vacío
-      return { valid: false, error: 'El archivo parece estar vacío o es demasiado pequeño' }
     }
     return { valid: true }
   }
@@ -534,7 +519,7 @@ const Verificacion = () => {
     setViewingPdf(null)
   }
 
-  if (checking) {
+ if (checking) {
     return (
       <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
         <div className="text-center">
@@ -577,11 +562,436 @@ const Verificacion = () => {
         </div>
       </div>
 
-      {/* Contenido principal - Documentos Procesados */}
-      <div className="container-fluid" style={{ maxWidth: "1200px", margin: "0 auto" }}>
-        <DocumentosProcesados />
-      </div>
+      {/* Contenido principal */}
+      <div className="container-fluid py-4" style={{ maxWidth: "1200px", margin: "0 auto" }}>
+        {/* Section 1: Upload + Status Cards - FUSIÓN INTELIGENTE */}
+        <div className="row mb-4">
+          {/* Upload section */}
+          <div className="col-md-6">
+            <div className="card p-4 h-100">
+              <div className="d-flex align-items-center gap-3 mb-3">
+                <div style={{ fontSize: "2.5rem", color: "#17a2b8" }}>
+                  <i className="bi bi-cloud-arrow-up"></i>
+                </div>
+                <div>
+                  <h5 className="mb-0">Subir & Procesar PDF</h5>
+                  <small className="text-muted">Validación y Conversión con Ghostscript</small>
+                </div>
+              </div>
+              
+              <div 
+                style={{
+                  border: isDragging ? "2px solid #17a2b8" : "2px dashed #17a2b8",
+                  borderRadius: "8px",
+                  padding: "40px 20px",
+                  textAlign: "center",
+                  backgroundColor: isDragging ? "#e6f3ff" : "#f0f8ff",
+                  cursor: "pointer",
+                  transition: "all 0.3s ease",
+                  position: "relative"
+                }}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                onClick={() => document.getElementById('fileInput').click()}
+              >
+                <div style={{ fontSize: "2.5rem", color: "#17a2b8", marginBottom: "10px" }}>
+                  <i className={`bi ${isDragging ? 'bi-cloud-arrow-down-fill' : selectedFiles.length > 0 ? 'bi-files' : 'bi-cloud-arrow-down'}`}></i>
+                </div>
+                
+                {selectedFiles.length === 0 ? (
+                  <>
+                    <p className="mb-2">{isDragging ? 'Suelta los archivos aquí' : 'Arrastra PDF aquí'}</p>
+                    <small className="text-muted">o haz clic para seleccionar múltiples PDF</small>
+                    <div style={{ marginTop: "10px" }}>
+                      <small className="text-muted">Tamaño máximo total: 5MB</small>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p className="mb-2">
+                      <strong>{selectedFiles.length} archivo{selectedFiles.length > 1 ? 's' : ''} seleccionado{selectedFiles.length > 1 ? 's' : ''}</strong>
+                    </p>
+                    <div className="mb-2">
+                      <small className="text-muted">
+                        Tamaño total: <strong>
+                          {(selectedFiles.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(2)} MB
+                        </strong> / 5 MB
+                      </small>
+                    </div>
+                    <small className="text-muted">Haz clic para agregar más PDFs</small>
+                  </>
+                )}
+              </div>
 
+              <input
+                type="file"
+                id="fileInput"
+                multiple
+                accept=".pdf"
+                style={{ display: 'none' }}
+                onChange={handleFileChange}
+              />
+
+              {/* Lista de archivos seleccionados */}
+              {selectedFiles.length > 0 && (
+                <div className="mt-3" style={{maxHeight: "200px", overflowY: "auto"}}>
+                  <div className="d-flex justify-content-between align-items-center mb-2">
+                    <small className="text-muted fw-bold">
+                      <i className="bi bi-files me-1"></i>
+                      Archivos a procesar:
+                    </small>
+                    <button 
+                      className="btn btn-sm btn-outline-danger"
+                      onClick={clearAllFiles}
+                      title="Limpiar todos"
+                    >
+                      <i className="bi bi-trash"></i>
+                    </button>
+                  </div>
+                  
+                  {selectedFiles.map((file, index) => (
+                    <div key={index} className="d-flex align-items-center justify-content-between p-2 mb-1 bg-light rounded">
+                      <div className="d-flex align-items-center flex-grow-1">
+                        <i className="bi bi-file-pdf text-danger me-2"></i>
+                        <div className="flex-grow-1">
+                          <div className="text-truncate" style={{maxWidth: '200px'}} title={file.name}>
+                            <small className="fw-medium">{file.name}</small>
+                          </div>
+                          <div>
+                            <small className="text-muted">{(file.size / 1024 / 1024).toFixed(2)} MB</small>
+                          </div>
+                        </div>
+                      </div>
+                      <button 
+                        className="btn btn-sm btn-outline-danger"
+                        onClick={() => removeFileFromSelection(index)}
+                        title="Eliminar archivo"
+                      >
+                        <i className="bi bi-x"></i>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Botón de procesar */}
+              <div className="mt-3">
+                <button 
+                  className={`btn w-100 ${selectedFiles.length === 0 ? 'btn-secondary' : 'btn-success'}`}
+                  disabled={uploading || selectedFiles.length === 0}
+                  onClick={processSelectedFiles}
+                  style={{
+                    opacity: selectedFiles.length === 0 ? 0.5 : 1,
+                    transition: "all 0.3s ease",
+                    fontSize: "1.1rem",
+                    padding: "12px 20px"
+                  }}
+                >
+                  {uploading ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-2"></span>
+                      Procesando archivos...
+                    </>
+                  ) : selectedFiles.length === 0 ? (
+                    <>
+                      <i className="bi bi-gear me-2"></i>
+                      Selecciona PDFs para procesar
+                    </>
+                  ) : (
+                    <>
+                      <i className="bi bi-gear me-2"></i>
+                      Procesar {selectedFiles.length} archivo{selectedFiles.length > 1 ? 's' : ''}
+                      <small className="d-block mt-1" style={{fontSize: "0.85rem", opacity: 0.9}}>
+                        {(selectedFiles.reduce((sum, file) => sum + file.size, 0) / 1024 / 1024).toFixed(2)} MB total
+                      </small>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {/* Progreso de archivos */}
+              {processing.length > 0 && (
+                <div className="mt-3">
+                  <small className="text-muted d-block mb-2">
+                    <i className="bi bi-gear-fill me-1"></i>
+                    Procesando archivos:
+                  </small>
+                  {processing.map(file => (
+                    <div key={file.id} className="mb-2">
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <small className="text-truncate" style={{maxWidth: '200px'}}>{file.name}</small>
+                        <small className="fw-bold text-primary">{file.progress}%</small>
+                      </div>
+                      <div className="progress" style={{height: '6px'}}>
+                        <div 
+                          className="progress-bar bg-gradient" 
+                          style={{width: `${file.progress}%`}}
+                        ></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Status cards - MÉTRICAS DINÁMICAS */}
+          <div className="col-md-6">
+            <div className="row g-2">
+              {/* Procesados */}
+              <div className="col-12">
+                <div className="card p-3" style={{ borderLeft: "4px solid #17a2b8" }}>
+                  <div className="d-flex align-items-center">
+                    <div style={{ fontSize: "1.8rem", color: "#17a2b8", marginRight: "15px" }}>
+                      <i className="bi bi-file-check"></i>
+                    </div>
+                    <div>
+                      <small className="text-muted d-block">PROCESADOS</small>
+                      <h4 className="mb-0">{metrics.procesados}</h4>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {/* Enviados */}
+              <div className="col-12">
+                <div className="card p-3" style={{ borderLeft: "4px solid #6f42c1" }}>
+                  <div className="d-flex align-items-center">
+                    <div style={{ fontSize: "1.8rem", color: "#6f42c1", marginRight: "15px" }}>
+                      <i className="bi bi-send"></i>
+                    </div>
+                    <div>
+                      <small className="text-muted d-block">ENVIADOS</small>
+                      <h4 className="mb-0">{metrics.enviados}</h4>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {/* No cumplidos */}
+              <div className="col-12">
+                <div className="card p-3" style={{ borderLeft: "4px solid #dc3545" }}>
+                  <div className="d-flex align-items-center">
+                    <div style={{ fontSize: "1.8rem", color: "#dc3545", marginRight: "15px" }}>
+                      <i className="bi bi-exclamation-circle"></i>
+                    </div>
+                    <div>
+                      <small className="text-muted d-block">NO CUMPLIDOS</small>
+                      <h4 className="mb-0">{metrics.noCumplidos}</h4>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              {/* Mis Empresas */}
+              <div className="col-12">
+                <div className="card p-3" style={{ borderLeft: "4px solid #e83e8c" }}>
+                  <div className="d-flex align-items-center">
+                    <div style={{ fontSize: "1.8rem", color: "#e83e8c", marginRight: "15px" }}>
+                      <i className="bi bi-building"></i>
+                    </div>
+                    <div>
+                      <small className="text-muted d-block">MIS EMPRESAS</small>
+                      <h4 className="mb-0">{metrics.misEmpresas}</h4>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 2: Requirements box */}
+        <div className="card mb-4">
+          <div className="card-header" style={{ background: "#f8f9fa", borderBottom: "1px solid #dee2e6" }}>
+            <h6 className="mb-0">
+              <i className="bi bi-info-circle me-2"></i>
+              Requerimientos de Documentos
+            </h6>
+          </div>
+          <div className="card-body">
+            <div className="row">
+              <div className="col-md-6">
+                <ul className="reqs mb-0">
+                  <li>
+                    <strong>Tipo de archivo:</strong> Solo PDF.
+                  </li>
+                  <li>
+                    <strong>Formato:</strong> Escala de grises a 8 bits.
+                  </li>
+                  <li>
+                    <strong>Resolución:</strong> 300 DPI.
+                  </li>
+                </ul>
+              </div>
+              <div className="col-md-6">
+                <ul className="reqs mb-0">
+                  <li>
+                    <strong>Tamaño individual:</strong> Máximo 5 MB por archivo.
+                  </li>
+                  <li>
+                    <strong>Tamaño total:</strong> Máximo 5 MB entre todos los archivos.
+                  </li>
+                  <li>
+                    <strong>Contenido:</strong> Sin formularios ni contraseñas.
+                  </li>
+                </ul>
+              </div>
+            </div>
+            
+            <div className="alert alert-info mt-3 mb-0" style={{background: "linear-gradient(90deg, #e3f2fd 0%, #f3e5f5 100%)", border: "1px solid #17a2b8"}}>
+              <div className="row align-items-center">
+                <div className="col-auto">
+                  <i className="bi bi-lightbulb-fill text-primary" style={{fontSize: "1.5rem"}}></i>
+                </div>
+                <div className="col">
+                  <strong>Nuevo flujo mejorado:</strong> Puedes seleccionar múltiples PDFs y acumularlos antes de procesarlos. 
+                  El botón de procesar se habilitará automáticamente cuando tengas archivos seleccionados.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 3: Documentos Procesados */}
+        <div className="card mb-4">
+          <div className="card-header" style={{ background: "linear-gradient(90deg, #17a2b8 0%, #20c997 100%)", color: "white" }}>
+            <div className="d-flex align-items-center gap-2">
+              <i className="bi bi-files" style={{ fontSize: "1.5rem" }}></i>
+              <div>
+                <h6 className="mb-0">Documentos Procesados ({documents.length})</h6>
+                <small>Validados y convertidos con Ghostscript</small>
+              </div>
+            </div>
+          </div>
+          <div className="card-body">
+            {documents.length === 0 ? (
+              <div className="text-center py-4">
+                <div style={{ fontSize: "2.5rem", color: "#ccc", marginBottom: "15px" }}>
+                  <i className="bi bi-files"></i>
+                </div>
+                <p className="text-muted mb-1">No hay documentos procesados</p>
+                <small className="text-muted">Los archivos aparecerán aquí después de procesarlos con Ghostscript</small>
+              </div>
+            ) : (
+              <div className="table-responsive">
+                <table className="table table-hover">
+                  <thead>
+                    <tr>
+                      <th>Documento</th>
+                      <th>Estado</th>
+                      <th>Tipo</th>
+                      <th>Fecha</th>
+                      <th>Tamaño</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {documents.map(doc => (
+                      <tr key={doc.id}>
+                        <td>
+                          <div className="d-flex align-items-center">
+                            <i className="bi bi-file-pdf text-danger me-2" style={{fontSize: '1.2rem'}}></i>
+                            <div>
+                              <div className="fw-medium text-truncate" style={{maxWidth: '200px'}}>
+                                {doc.name}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          {doc.status === 'processed' && (
+                            <span className="badge bg-success">
+                              <i className="bi bi-check-circle me-1"></i>Procesado
+                            </span>
+                          )}
+                          {doc.status === 'sent' && (
+                            <span className="badge bg-info">
+                              <i className="bi bi-send me-1"></i>Enviado
+                            </span>
+                          )}
+                          {doc.status === 'non_compliant' && (
+                            <span className="badge bg-danger">
+                              <i className="bi bi-exclamation-circle me-1"></i>No cumple
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <span className="badge bg-primary">
+                            <i className="bi bi-gear me-1"></i>Ghostscript
+                          </span>
+                        </td>
+                        <td>{new Date(doc.uploadDate).toLocaleDateString('es-ES')}</td>
+                        <td>{(doc.size / 1024 / 1024).toFixed(2)} MB</td>
+                        <td>
+                          <div className="btn-group btn-group-sm">
+                            <button 
+                              className="btn btn-outline-primary"
+                              onClick={() => viewPdf(doc)}
+                              title="Ver PDF"
+                            >
+                              <i className="bi bi-eye"></i>
+                            </button>
+                            <button 
+                              className="btn btn-outline-danger"
+                              onClick={() => deleteDocument(doc.id)}
+                              title="Eliminar"
+                            >
+                              <i className="bi bi-trash"></i>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Section 4: Estadísticas Rápidas */}
+        {documents.length > 0 && (
+          <div className="card">
+            <div className="card-header" style={{ background: "linear-gradient(90deg, #6f42c1 0%, #e83e8c 100%)", color: "white" }}>
+              <div className="d-flex align-items-center gap-2">
+                <i className="bi bi-graph-up" style={{ fontSize: "1.5rem" }}></i>
+                <div>
+                  <h6 className="mb-0">Resumen de Procesamiento</h6>
+                  <small>Estadísticas de documentos procesados con Ghostscript</small>
+                </div>
+              </div>
+            </div>
+            <div className="card-body">
+              <div className="row g-3">
+                <div className="col-md-3">
+                  <div className="text-center p-3 bg-light rounded">
+                    <div className="h4 text-primary mb-1">{documents.length}</div>
+                    <small className="text-muted">Total Documentos</small>
+                  </div>
+                </div>
+                <div className="col-md-3">
+                  <div className="text-center p-3 bg-light rounded">
+                    <div className="h4 text-success mb-1">{documents.filter(d => d.status === 'processed').length}</div>
+                    <small className="text-muted">Procesados</small>
+                  </div>
+                </div>
+                <div className="col-md-3">
+                  <div className="text-center p-3 bg-light rounded">
+                    <div className="h4 text-info mb-1">{documents.filter(d => d.status === 'sent').length}</div>
+                    <small className="text-muted">Enviados</small>
+                  </div>
+                </div>
+                <div className="col-md-3">
+                  <div className="text-center p-3 bg-light rounded">
+                    <div className="h4 text-danger mb-1">{documents.filter(d => d.status === 'non_compliant').length}</div>
+                    <small className="text-muted">No Cumplidos</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+      
       {/* Modal PDF Viewer - Backend Documents */}
       {viewingPdf && (
         <div className="modal fade show" style={{display: 'block', backgroundColor: 'rgba(0,0,0,0.5)'}} onClick={() => closePdfViewer()}>

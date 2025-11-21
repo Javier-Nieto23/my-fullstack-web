@@ -28,7 +28,7 @@ const DocumentosProcesados = () => {
         }
       })
 
-      setDocumentos(response.data)
+      setDocumentos(response.data.documents)
       setError('')
     } catch (err) {
       console.error('Error cargando documentos:', err)
