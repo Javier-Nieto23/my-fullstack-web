@@ -603,7 +603,8 @@ app.get('/api/documents/:id/view', verifyToken, async (req, res) => {
         
         console.log(`📄 Sirviendo PDF desde R2: ${document.filePath}`);
         
-        const pdfBuffer = await response.buffer();
+        const pdfArrayBuffer = await response.arrayBuffer();
+        const pdfBuffer = Buffer.from(pdfArrayBuffer);
         res.send(pdfBuffer);
         
       } catch (r2Error) {
