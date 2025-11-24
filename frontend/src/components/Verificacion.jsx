@@ -699,149 +699,6 @@ const Verificacion = () => {
     setViewingPdf(null)
   }
 
-  const downloadPdf = async (doc) => {
-    try {
-      // Verificar que tenemos un token antes de continuar
-      const token = localStorage.getItem('token')
-      
-      if (!token) {
-        Swal.fire({
-          title: 'Sesión expirada',
-          text: 'No se encontró token de autenticación. Por favor, inicia sesión nuevamente.',
-          icon: 'warning',
-          confirmButtonText: 'Ir a Login'
-        }).then(() => {
-          handleLogout()
-        })
-        return
-      }
-
-      console.log('🔍 Iniciando descarga de PDF:', doc.name)
-      console.log('🔑 Token encontrado:', token ? 'SÍ' : 'NO')
-      console.log('📁 Document ID:', doc.id)
-
-      // Mostrar loading durante la descarga
-      Swal.fire({
-        title: 'Preparando descarga...',
-        html: `Descargando: <strong>${doc.name}</strong>`,
-        allowOutsideClick: false,
-        didOpen: () => {
-          Swal.showLoading()
-        }
-      })
-
-      // Construir URL de descarga
-      const downloadEndpoint = `${API_URL}/api/documents/${doc.id}/download`
-      console.log('🌐 URL de descarga:', downloadEndpoint)
-      
-      // Obtener el PDF como blob desde el backend
-      const response = await axios.get(downloadEndpoint, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        responseType: 'blob', // Importante: obtener como blob para descarga
-        timeout: 30000 // 30 segundos de timeout
-      })
-
-      console.log('✅ Respuesta recibida:', response.status)
-      console.log('📊 Tamaño del archivo:', response.data.size, 'bytes')
-
-      // Crear un blob y URL temporal para descarga
-      const blob = new Blob([response.data], { type: 'application/pdf' })
-      const downloadUrl = URL.createObjectURL(blob)
-      
-      // Crear elemento temporal para descarga
-      const link = document.createElement('a')
-      link.href = downloadUrl
-      link.download = doc.originalName || doc.name || 'documento.pdf'
-      link.style.display = 'none'
-      
-      // Agregar al DOM, hacer clic y remover
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      
-      console.log('📥 Descarga iniciada:', link.download)
-      
-      // Limpiar URL temporal después de un momento
-      setTimeout(() => {
-        URL.revokeObjectURL(downloadUrl)
-      }, 1000)
-
-      // Cerrar loading y mostrar éxito
-      Swal.close()
-      
-      // Mostrar confirmación breve
-      Swal.fire({
-        title: '¡Descarga iniciada!',
-        html: `<i class="bi bi-download text-success"></i> ${doc.name}`,
-        icon: 'success',
-        timer: 2000,
-        timerProgressBar: true,
-        showConfirmButton: false
-      })
-
-    } catch (error) {
-      console.error('❌ Error descargando PDF:', error)
-      console.error('📊 Error details:', {
-        status: error.response?.status,
-        statusText: error.response?.statusText,
-        data: error.response?.data,
-        headers: error.response?.headers,
-        config: error.config
-      })
-      
-      Swal.close()
-      
-      // Manejo específico de errores
-      if (error.response?.status === 401) {
-        Swal.fire({
-          title: 'Sesión expirada',
-          text: 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.',
-          icon: 'warning',
-          confirmButtonText: 'Ir a Login'
-        }).then(() => {
-          handleLogout()
-        })
-      } else if (error.response?.status === 404) {
-        Swal.fire('Error', 'Documento no encontrado en el servidor.', 'error')
-      } else if (error.response?.status === 403) {
-        Swal.fire('Error', 'No tienes permisos para descargar este documento.', 'error')
-      } else if (error.code === 'ECONNABORTED') {
-        Swal.fire('Error', 'Timeout de conexión. El archivo tardó demasiado en descargarse.', 'error')
-      } else if (!error.response) {
-        Swal.fire('Error de conexión', `No se pudo conectar al servidor.\n\nAPI URL: ${API_URL}`, 'error')
-      } else {
-        const errorData = error.response?.data
-        let errorMessage = 'Error desconocido al descargar el documento'
-        
-        if (errorData) {
-          // Si el error viene como JSON
-          if (typeof errorData === 'object' && errorData.error) {
-            errorMessage = errorData.error
-          } 
-          // Si el error viene como texto (blob)
-          else if (errorData instanceof Blob) {
-            try {
-              const text = await errorData.text()
-              const jsonError = JSON.parse(text)
-              errorMessage = jsonError.error || text
-            } catch {
-              errorMessage = 'Error al procesar respuesta del servidor'
-            }
-          }
-          // Si es texto directo
-          else if (typeof errorData === 'string') {
-            errorMessage = errorData
-          }
-        }
-        
-        Swal.fire('Error', `Error al descargar: ${errorMessage}`, 'error')
-      }
-    }
-  }
-
  if (checking) {
     return (
       <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
@@ -1341,16 +1198,9 @@ const Verificacion = () => {
                   title={`PDF: ${viewingPdf.name}`}
                 />
               </div>
-              <div className="modal-footer d-flex justify-content-between">
+              <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={() => closePdfViewer()}>
                   <i className="bi bi-x-circle me-1"></i>Cerrar
-                </button>
-                <button 
-                  className="btn btn-success"
-                  onClick={() => downloadPdf(viewingPdf)}
-                  title="Descargar este PDF"
-                >
-                  <i className="bi bi-download me-1"></i>Descargar PDF
                 </button>
               </div>
             </div>
