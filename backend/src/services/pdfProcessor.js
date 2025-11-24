@@ -167,6 +167,7 @@ class PDFProcessor {
         const stats = await fs.stat(outputPath);
         if (stats.size === 0) {
           throw new Error('El archivo procesado está vacío');
+          
         }
 
         console.log(`📦 Archivo generado: ${(stats.size / 1024).toFixed(2)}KB`);

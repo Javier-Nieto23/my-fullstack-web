@@ -1334,16 +1334,16 @@ const Verificacion = () => {
                 </h5>
                 <button type="button" className="btn-close" onClick={() => closePdfViewer()}></button>
               </div>
-              <div className="modal-body p-0">
+              <div className="modal-body p-0" style={{maxHeight: '75vh', overflow: 'hidden'}}>
                 <iframe
                   src={viewingPdf.fullUrl}
-                  style={{width: '100%', height: '70vh', border: 'none'}}
+                  style={{width: '100%', height: '65vh', border: 'none'}}
                   title={`PDF: ${viewingPdf.name}`}
                 />
               </div>
-              <div className="modal-footer">
+              <div className="modal-footer d-flex justify-content-between">
                 <button className="btn btn-secondary" onClick={() => closePdfViewer()}>
-                  Cerrar
+                  <i className="bi bi-x-circle me-1"></i>Cerrar
                 </button>
                 <button 
                   className="btn btn-success"
