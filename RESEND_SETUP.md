@@ -5,6 +5,7 @@ Este documento explica cómo configurar el servicio de correo electrónico usand
 ## 📧 ¿Qué es Resend?
 
 Resend es un servicio moderno de envío de correos electrónicos diseñado para desarrolladores. Ofrece:
+
 - ✅ API simple y confiable
 - ✅ Envío de adjuntos (hasta 40MB)
 - ✅ Templates HTML personalizables
@@ -66,11 +67,13 @@ RESEND_FROM_EMAIL=noreply@tudominio.com
 ### 5. Email de Envío
 
 **Si NO tienes dominio verificado:**
+
 ```bash
 RESEND_FROM_EMAIL=onboarding@resend.dev
 ```
 
 **Si tienes dominio verificado:**
+
 ```bash
 RESEND_FROM_EMAIL=noreply@tudominio.com
 # o cualquier email con tu dominio verificado
@@ -90,6 +93,7 @@ RESEND_FROM_EMAIL=noreply@tudominio.com
 ### 2. Verificar Logs
 
 En Railway:
+
 ```bash
 # Busca estos mensajes en los logs:
 📧 [Email] Enviando PDF a: correo@ejemplo.com
@@ -101,11 +105,13 @@ En Railway:
 ## 📊 Límites del Servicio
 
 ### Plan Gratuito
+
 - 100 emails por día
 - 3,000 emails por mes
 - Adjuntos hasta 40MB
 
 ### Plan Pro ($20/mes)
+
 - 50,000 emails por mes
 - Adjuntos hasta 40MB
 - Soporte prioritario
@@ -117,6 +123,7 @@ En Railway:
 **Causa**: Variables de entorno no configuradas
 
 **Solución**:
+
 ```bash
 # Verifica que las variables existen en Railway
 RESEND_API_KEY=re_xxxx
@@ -130,6 +137,7 @@ RESEND_FROM_EMAIL=xxx@xxx.com
 **Causa**: Intentas enviar desde un email/dominio no verificado
 
 **Solución**:
+
 - Usa `onboarding@resend.dev` (solo testing)
 - O verifica tu dominio en Resend
 
@@ -138,6 +146,7 @@ RESEND_FROM_EMAIL=xxx@xxx.com
 **Causa**: API key incorrecta o expirada
 
 **Solución**:
+
 1. Ve a Resend dashboard
 2. Verifica/genera una nueva API key
 3. Actualiza la variable en Railway
@@ -145,6 +154,7 @@ RESEND_FROM_EMAIL=xxx@xxx.com
 ### Los correos no llegan
 
 **Posibles causas**:
+
 1. **Revisa spam/correo no deseado**
 2. **Email incorrecto**: Verifica el formato
 3. **Dominio no verificado**: Usa `onboarding@resend.dev` para testing
@@ -153,6 +163,7 @@ RESEND_FROM_EMAIL=xxx@xxx.com
 ## 📝 Template del Correo
 
 El correo enviado incluye:
+
 - 📄 Encabezado con diseño profesional
 - 👤 Saludo personalizado con nombre del usuario
 - 📎 Información del documento (nombre, tamaño, fecha)
@@ -175,6 +186,7 @@ El correo enviado incluye:
 ## 🆘 Soporte
 
 Si tienes problemas:
+
 1. Revisa los logs del backend en Railway
 2. Verifica las variables de entorno
 3. Consulta el dashboard de Resend

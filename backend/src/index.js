@@ -1015,6 +1015,40 @@ app.get('/debug/database', async (req, res) => {
   }
 })
 
+// GET /debug/services - Verificar estado de servicios externos
+app.get('/debug/services', (req, res) => {
+  const services = {
+    timestamp: new Date().toISOString(),
+    server: {
+      status: 'running',
+      port: PORT,
+      environment: process.env.NODE_ENV || 'development'
+    },
+    database: {
+      configured: !!process.env.DATABASE_URL,
+      status: 'connected'
+    },
+    cloudflareR2: {
+      configured: r2Service.isConfigured(),
+      endpoint: process.env.R2_ENDPOINT ? 'configured' : 'missing',
+      bucket: process.env.R2_BUCKET_NAME || 'not configured'
+    },
+    resendEmail: {
+      configured: emailService.isConfigured(),
+      apiKey: process.env.RESEND_API_KEY ? 'configured (hidden)' : 'missing',
+      fromEmail: process.env.RESEND_FROM_EMAIL || 'not configured',
+      package: 'resend@6.5.2'
+    }
+  }
+
+  res.json({
+    status: 'success',
+    message: 'Estado de servicios',
+    services,
+    allServicesReady: services.cloudflareR2.configured && services.resendEmail.configured
+  })
+})
+
 const PORT = process.env.PORT || 3000
 
 // Middleware global de manejo de errores
@@ -1066,6 +1100,29 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`)
   console.log(`🔗 CORS configurado para: ${corsOptions.origin}`)
   console.log(`⏰ Servidor iniciado: ${new Date().toISOString()}`)
+  
+  // Verificar servicios externos
+  console.log('\n📦 Verificando servicios externos:')
+  
+  // Verificar Cloudflare R2
+  if (r2Service.isConfigured()) {
+    console.log('✅ Cloudflare R2: Configurado')
+  } else {
+    console.log('⚠️  Cloudflare R2: No configurado (usando almacenamiento local)')
+  }
+  
+  // Verificar Resend Email
+  if (emailService.isConfigured()) {
+    console.log('✅ Resend Email: Configurado')
+    console.log(`   📧 Email desde: ${process.env.RESEND_FROM_EMAIL}`)
+  } else {
+    console.log('⚠️  Resend Email: No configurado')
+    console.log('   ℹ️  Para habilitar envío de correos, configura:')
+    console.log('   - RESEND_API_KEY')
+    console.log('   - RESEND_FROM_EMAIL')
+  }
+  
+  console.log('\n')
 })
 
 server.on('error', (error) => {
