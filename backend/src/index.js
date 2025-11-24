@@ -16,6 +16,7 @@ import { promisify } from 'util'
 import r2Service from './services/cloudflareR2.js'
 import { pdfValidator } from './services/pdfValidator.js'
 import PDFProcessor from './services/pdfProcessor.js'
+import emailService from './services/emailService.js'
 
 const execAsync = promisify(exec)
 
@@ -714,6 +715,112 @@ app.get('/api/documents/:id/download', verifyToken, async (req, res) => {
   } catch (error) {
     console.error('Error descargando PDF:', error)
     res.status(500).json({ error: 'Error al descargar documento' })
+  }
+})
+
+// GET /api/documents/:id/send-email - Enviar PDF por correo electrónico
+app.post('/api/documents/:id/send-email', verifyToken, async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id)
+    const userId = req.user.id
+    const { email } = req.body
+
+    // Validar email
+    if (!email) {
+      return res.status(400).json({ error: 'Email es requerido' })
+    }
+
+    // Verificar configuración del servicio de email
+    if (!emailService.isConfigured()) {
+      return res.status(503).json({ 
+        error: 'Servicio de correo no disponible',
+        details: 'El servicio de correo electrónico no está configurado. Contacta al administrador.'
+      })
+    }
+
+    // Obtener documento y usuario
+    const [document, user] = await Promise.all([
+      prisma.document.findFirst({
+        where: {
+          id: documentId,
+          userId: userId
+        }
+      }),
+      prisma.user.findUnique({
+        where: { id: userId }
+      })
+    ])
+
+    if (!document) {
+      return res.status(404).json({ error: 'Documento no encontrado' })
+    }
+
+    if (!document.filePath) {
+      return res.status(404).json({ error: 'Archivo no encontrado en el almacenamiento' })
+    }
+
+    console.log(`📧 Preparando envío de: ${document.originalName} a ${email}`)
+
+    let pdfBuffer
+
+    // Obtener el PDF buffer según el tipo de almacenamiento
+    if (r2Service.isConfigured()) {
+      // Desde Cloudflare R2
+      try {
+        const signedUrl = await r2Service.getSignedViewUrl(document.filePath, 3600)
+        const response = await fetch(signedUrl)
+        
+        if (!response.ok) {
+          throw new Error(`Error obteniendo archivo: ${response.status}`)
+        }
+        
+        const pdfArrayBuffer = await response.arrayBuffer()
+        pdfBuffer = Buffer.from(pdfArrayBuffer)
+      } catch (r2Error) {
+        console.error('Error obteniendo archivo de R2:', r2Error)
+        return res.status(500).json({ error: 'Error al acceder al archivo en R2' })
+      }
+    } else {
+      // Desde almacenamiento local
+      const localFilePath = path.join(uploadsDir, document.filePath)
+      
+      try {
+        await fs.promises.access(localFilePath, fs.constants.F_OK)
+        pdfBuffer = await fs.promises.readFile(localFilePath)
+      } catch (fileError) {
+        console.error('Error accediendo archivo local:', fileError)
+        return res.status(404).json({ error: 'Archivo no encontrado en el servidor' })
+      }
+    }
+
+    // Enviar el correo con el PDF
+    try {
+      const result = await emailService.sendPdf({
+        to: email,
+        documentName: document.originalName,
+        pdfBuffer: pdfBuffer,
+        userName: user.nombre
+      })
+
+      console.log('✅ Correo enviado exitosamente:', result.messageId)
+
+      res.json({
+        success: true,
+        message: `Documento enviado exitosamente a ${email}`,
+        messageId: result.messageId
+      })
+
+    } catch (emailError) {
+      console.error('❌ Error enviando correo:', emailError)
+      res.status(500).json({ 
+        error: 'Error al enviar el correo',
+        details: emailError.message 
+      })
+    }
+
+  } catch (error) {
+    console.error('Error en envío por correo:', error)
+    res.status(500).json({ error: 'Error al procesar solicitud de envío' })
   }
 })
 

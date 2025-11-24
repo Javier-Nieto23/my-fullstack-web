@@ -699,6 +699,122 @@ const Verificacion = () => {
     setViewingPdf(null)
   }
 
+  const sendPdfByEmail = async (doc) => {
+    try {
+      const token = localStorage.getItem('token')
+      
+      if (!token) {
+        Swal.fire({
+          title: 'Sesión expirada',
+          text: 'Por favor, inicia sesión nuevamente.',
+          icon: 'warning',
+          confirmButtonText: 'Ir a Login'
+        }).then(() => {
+          handleLogout()
+        })
+        return
+      }
+
+      // Obtener el email del usuario del localStorage o token
+      const userEmail = localStorage.getItem('userEmail') || user?.email
+
+      // Pedir confirmación y email
+      const { value: email } = await Swal.fire({
+        title: 'Enviar documento por correo',
+        html: `
+          <p class="mb-3">Se enviará: <strong>${doc.name}</strong></p>
+          <input id="email-input" class="swal2-input" placeholder="correo@ejemplo.com" value="${userEmail || ''}" type="email">
+        `,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Enviar',
+        cancelButtonText: 'Cancelar',
+        confirmButtonColor: '#28a745',
+        preConfirm: () => {
+          const emailInput = document.getElementById('email-input').value
+          if (!emailInput) {
+            Swal.showValidationMessage('Por favor ingresa un correo electrónico')
+            return false
+          }
+          // Validar formato de email
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+          if (!emailRegex.test(emailInput)) {
+            Swal.showValidationMessage('Por favor ingresa un correo válido')
+            return false
+          }
+          return emailInput
+        }
+      })
+
+      if (!email) return // Usuario canceló
+
+      // Mostrar loading
+      Swal.fire({
+        title: 'Enviando correo...',
+        html: `Enviando <strong>${doc.name}</strong> a <strong>${email}</strong>`,
+        allowOutsideClick: false,
+        didOpen: () => {
+          Swal.showLoading()
+        }
+      })
+
+      // Enviar solicitud al backend
+      const response = await axios.post(
+        `${API_URL}/api/documents/${doc.id}/send-email`,
+        { email },
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 60000 // 60 segundos para enviar el correo
+        }
+      )
+
+      Swal.close()
+
+      // Mostrar éxito
+      Swal.fire({
+        title: '¡Correo enviado!',
+        html: `
+          <p><i class="bi bi-envelope-check text-success" style="font-size: 3rem;"></i></p>
+          <p>El documento ha sido enviado a:</p>
+          <p><strong>${email}</strong></p>
+        `,
+        icon: 'success',
+        timer: 3000,
+        timerProgressBar: true
+      })
+
+    } catch (error) {
+      console.error('❌ Error enviando correo:', error)
+      Swal.close()
+      
+      if (error.response?.status === 401) {
+        Swal.fire({
+          title: 'Sesión expirada',
+          text: 'Tu sesión ha expirado. Por favor, inicia sesión nuevamente.',
+          icon: 'warning',
+          confirmButtonText: 'Ir a Login'
+        }).then(() => {
+          handleLogout()
+        })
+      } else if (error.response?.status === 503) {
+        Swal.fire({
+          title: 'Servicio no disponible',
+          text: 'El servicio de correo electrónico no está disponible. Contacta al administrador.',
+          icon: 'error'
+        })
+      } else if (error.response?.data?.error) {
+        Swal.fire('Error', error.response.data.error, 'error')
+      } else if (error.code === 'ECONNABORTED') {
+        Swal.fire('Error', 'Timeout: El envío tardó demasiado tiempo.', 'error')
+      } else {
+        Swal.fire('Error', 'No se pudo enviar el correo. Intenta nuevamente.', 'error')
+      }
+    }
+  }
+
  if (checking) {
     return (
       <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '100vh', backgroundColor: '#f8f9fa' }}>
@@ -1112,10 +1228,10 @@ const Verificacion = () => {
                             </button>
                             <button 
                               className="btn btn-outline-success"
-                              onClick={() => downloadPdf(doc)}
-                              title="Descargar PDF"
+                              onClick={() => sendPdfByEmail(doc)}
+                              title="Enviar por correo"
                             >
-                              <i className="bi bi-download"></i>
+                              <i className="bi bi-envelope"></i>
                             </button>
                             <button 
                               className="btn btn-outline-danger"
