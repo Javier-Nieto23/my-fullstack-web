@@ -1104,6 +1104,12 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   // Verificar servicios externos
   console.log('\n📦 Verificando servicios externos:')
   
+  // Debug de variables de entorno
+  console.log('\n🔍 Debug de variables de entorno:')
+  console.log('   RESEND_API_KEY:', process.env.RESEND_API_KEY ? `Sí (${process.env.RESEND_API_KEY.substring(0, 10)}...)` : '❌ NO')
+  console.log('   RESEND_FROM_EMAIL:', process.env.RESEND_FROM_EMAIL || '❌ NO')
+  console.log('')
+  
   // Verificar Cloudflare R2
   if (r2Service.isConfigured()) {
     console.log('✅ Cloudflare R2: Configurado')

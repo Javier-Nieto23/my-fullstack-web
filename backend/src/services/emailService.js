@@ -2,6 +2,11 @@ import { Resend } from 'resend'
 
 class EmailService {
   constructor() {
+    // Debug: verificar variables de entorno
+    console.log('🔍 [EmailService] Inicializando servicio de email')
+    console.log('🔍 [EmailService] RESEND_API_KEY:', process.env.RESEND_API_KEY ? `Configurada (${process.env.RESEND_API_KEY.substring(0, 8)}...)` : 'NO CONFIGURADA')
+    console.log('🔍 [EmailService] RESEND_FROM_EMAIL:', process.env.RESEND_FROM_EMAIL || 'NO CONFIGURADA')
+    
     this.resend = new Resend(process.env.RESEND_API_KEY)
     this.fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
   }
@@ -43,7 +48,7 @@ class EmailService {
             <head>
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>Tu documento está listo</title>
+              <title>Tu documento está listo!</title>
             </head>
             <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
               <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px 10px 0 0; text-align: center;">
