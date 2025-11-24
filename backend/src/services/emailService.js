@@ -16,7 +16,8 @@ class EmailService {
    * @returns {boolean}
    */
   isConfigured() {
-    return !!(process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL)
+    // Solo requerimos la API KEY, el email tiene fallback
+    return !!process.env.RESEND_API_KEY
   }
 
   /**
