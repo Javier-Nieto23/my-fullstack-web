@@ -304,6 +304,8 @@ const Verificacion = () => {
     setUploading(true)
     const token = localStorage.getItem('token')
     const processingIds = []
+    let alertShown = false
+    let singleResultDoc = null
 
     // Validar tamaño total antes de procesar
     const totalValidation = validateTotalSize(files)
@@ -388,6 +390,7 @@ const Verificacion = () => {
               confirmButtonText: 'Entendido',
               width: '600px'
             })
+            alertShown = true
           }
           // Si el archivo fue procesado automáticamente, mostrar información
           else if (processingInfo?.wasProcessed) {
@@ -420,6 +423,7 @@ const Verificacion = () => {
               confirmButtonText: 'Entendido',
               width: '600px'
             })
+            alertShown = true
           }
           // Si hay warnings importantes aunque no se haya procesado
           else if (validationInfo?.warnings && validationInfo.warnings.length > 0) {
@@ -441,6 +445,7 @@ const Verificacion = () => {
               confirmButtonText: 'Entendido',
               width: '600px'
             })
+            alertShown = true
           }
 
           setTimeout(() => {
@@ -511,11 +516,50 @@ const Verificacion = () => {
             confirmButtonColor: errorIcon === 'warning' ? '#f39c12' : '#d33',
             width: showDetails ? '600px' : undefined
           })
+          alertShown = true
+        }
+
+        // Guardar resultado del primer documento cuando solo hay uno
+        if (files.length === 1) {
+          singleResultDoc = newDoc
         }
       }
 
       // No mostrar mensaje genérico de "Procesamiento completado"
       // Los mensajes individuales ya informan sobre el estado de cada archivo
+
+      // Caso específico: si se procesó un único archivo y no se mostró alerta por alguna razón, forzar aviso
+      if (files.length === 1 && singleResultDoc && singleResultDoc.status === 'non_compliant' && !alertShown) {
+        const validationInfo = singleResultDoc.validationInfo ? (typeof singleResultDoc.validationInfo === 'string' ? (() => { try { return JSON.parse(singleResultDoc.validationInfo) } catch { return {} } })() : singleResultDoc.validationInfo) : {}
+        Swal.fire({
+          title: 'Documento No Cumplido',
+          html: `
+            <div class="text-start">
+              <p><i class="bi bi-exclamation-triangle text-danger"></i> <strong>El PDF no cumple con las especificaciones requeridas</strong></p>
+              <hr>
+              <small class="text-muted"><strong>Razón del rechazo:</strong></small>
+              <p style="font-size: 0.9em;" class="mt-2">${singleResultDoc.errorReason || 'No se pudo procesar el archivo'}</p>
+              ${validationInfo?.errors && validationInfo.errors.length > 0 ? `
+                <hr>
+                <small class="text-muted"><strong>Errores detectados:</strong></small>
+                <ul style="font-size: 0.9em;" class="mt-2">
+                  ${validationInfo.errors.map(e => `<li>${e}</li>`).join('')}
+                </ul>
+              ` : ''}
+              ${validationInfo?.warnings && validationInfo.warnings.length > 0 ? `
+                <hr>
+                <small class="text-muted"><strong>Advertencias:</strong></small>
+                <ul style="font-size: 0.9em;" class="mt-2">
+                  ${validationInfo.warnings.map(w => `<li>${w}</li>`).join('')}
+                </ul>
+              ` : ''}
+            </div>
+          `,
+          icon: 'warning',
+          confirmButtonText: 'Entendido',
+          width: '600px'
+        })
+      }
 
     } catch (error) {
       console.error('Error uploading files:', error)
