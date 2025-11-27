@@ -393,7 +393,7 @@ const Verificacion = () => {
             alertShown = true
           }
           // Si el archivo fue procesado automáticamente, mostrar información
-          else if (processingInfo?.wasProcessed) {
+          else if (processingInfo?.wasProcessed && newDoc.status === 'processed') {
             console.log('⚠️ Archivo procesado automáticamente:', processingInfo)
             Swal.fire({
               title: 'Archivo Procesado',
@@ -426,7 +426,7 @@ const Verificacion = () => {
             alertShown = true
           }
           // Si hay warnings importantes aunque no se haya procesado
-          else if (validationInfo?.warnings && validationInfo.warnings.length > 0) {
+          else if (validationInfo?.warnings && validationInfo.warnings.length > 0 && newDoc.status === 'processed') {
             console.log('⚠️ Archivo con advertencias:', validationInfo)
             Swal.fire({
               title: 'Archivo Procesado con Advertencias',
