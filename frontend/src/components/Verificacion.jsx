@@ -386,7 +386,7 @@ const Verificacion = () => {
                   <p class="mb-0"><small class="text-info">ℹ️ El archivo fue guardado y puedes verlo haciendo clic en él desde la lista de documentos.</small></p>
                 </div>
               `,
-              icon: 'warning',
+              icon: 'error',
               confirmButtonText: 'Entendido',
               width: '600px'
             })
@@ -532,7 +532,7 @@ const Verificacion = () => {
       if (files.length === 1 && singleResultDoc && singleResultDoc.status === 'non_compliant' && !alertShown) {
         const validationInfo = singleResultDoc.validationInfo ? (typeof singleResultDoc.validationInfo === 'string' ? (() => { try { return JSON.parse(singleResultDoc.validationInfo) } catch { return {} } })() : singleResultDoc.validationInfo) : {}
         Swal.fire({
-          title: 'Documento No Cumplido',
+          title: 'Error al procesar',
           html: `
             <div class="text-start">
               <p><i class="bi bi-exclamation-triangle text-danger"></i> <strong>El PDF no cumple con las especificaciones requeridas</strong></p>
@@ -555,7 +555,7 @@ const Verificacion = () => {
               ` : ''}
             </div>
           `,
-          icon: 'warning',
+          icon: 'error',
           confirmButtonText: 'Entendido',
           width: '600px'
         })
