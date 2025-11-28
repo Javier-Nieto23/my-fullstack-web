@@ -380,13 +380,7 @@ const Verificacion = () => {
                     ${processingInfo?.compressionRatio ? `<li><strong>Compresión:</strong> ${processingInfo.compressionRatio}</li>` : ''}
                     ${processingInfo?.report ? `<li><strong>Optimizaciones:</strong> ${processingInfo.report}</li>` : ''}
                   </ul>
-                  ${validationInfo?.warnings && validationInfo.warnings.length > 0 ? `
-                    <hr>
-                    <small class="text-muted"><strong>Advertencias:</strong></small>
-                    <ul style="font-size: 0.9em;" class="mt-2">
-                      ${validationInfo.warnings.map(w => `<li>${w}</li>`).join('')}
-                    </ul>
-                  ` : ''}
+                  
                   <hr>
                   <p class="mb-0"><small class="text-success">✅ El archivo ahora cumple y está disponible en la lista.</small></p>
                 </div>
