@@ -108,172 +108,61 @@ const Verificacion = () => {
   const loadDocuments = async () => {
     try {
       const token = localStorage.getItem('token')
-      console.log('Cargando documentos desde:', `${API_URL}/documents`)
-      
-      const response = await axios.get(`${API_URL}/documents`, {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 10000
-      })
-      
-      console.log('Documentos cargados:', response.data)
-      setDocuments(response.data)
-      updateMetrics(response.data)
-    } catch (error) {
-      console.error('Error loading documents:', error)
-      
-      if (error.code === 'ECONNABORTED') {
-        Swal.fire('Error', 'Timeout de conexión. El servidor tardó demasiado en responder.', 'error')
-      } else if (error.response?.status === 401) {
-        Swal.fire('Sesión expirada', 'Por favor, inicia sesión nuevamente', 'warning')
-        handleLogout()
-      } else if (!error.response) {
-        Swal.fire('Error de conexión', `No se pudo conectar al servidor. Verifica tu conexión a internet.\n\nAPI URL: ${API_URL}`, 'error')
-      } else {
-        Swal.fire('Error', `Error del servidor: ${error.response?.data?.error || error.message}`, 'error')
-      }
-    }
-  }
+      import React, { useEffect, useState } from "react";
+      import { useNavigate } from "react-router-dom";
 
-  const updateMetrics = (docs) => {
-    const procesados = docs.filter(doc => doc.status === 'processed').length
-    const enviados = docs.filter(doc => doc.status === 'sent').length
-    const noCumplidos = docs.filter(doc => doc.status === 'non_compliant').length
-    const empresas = [...new Set(docs.map(doc => doc.company))].length
+      // PrivateRoute: valida sesión y luego renderiza children
+      const PrivateRoute = ({ children }) => {
+        const navigate = useNavigate();
+        const [checking, setChecking] = useState(true);
+        const [valid, setValid] = useState(false);
+        const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
 
-    setMetrics({
-      procesados,
-      enviados,
-      noCumplidos,
-      misEmpresas: empresas
-    })
-  }
+        useEffect(() => {
+          const token = localStorage.getItem("token");
+          if (!token) {
+            navigate("/", { replace: true });
+            return;
+          }
 
-  // ===========================================
-  // DRAG & DROP Y SELECCIÓN DE ARCHIVOS
-  // ===========================================
-  
-  const handleDragOver = (e) => {
-    e.preventDefault()
-    setIsDragging(true)
-  }
+          (async () => {
+            try {
+              const res = await fetch(`${API_URL}/auth/me`, {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/json",
+                },
+                signal: AbortSignal.timeout(10000),
+              });
+              if (!res.ok) {
+                localStorage.removeItem("token");
+                localStorage.removeItem("user");
+                navigate("/", { replace: true });
+                return;
+              }
+              // Guardar datos mínimos de usuario para consumo del frontend
+              try {
+                const user = await res.json();
+                localStorage.setItem("user", JSON.stringify(user));
+                localStorage.setItem("userEmail", user?.email || "");
+              } catch {}
+              setValid(true);
+            } catch (err) {
+              localStorage.removeItem("token");
+              localStorage.removeItem("user");
+              navigate("/", { replace: true });
+            } finally {
+              setChecking(false);
+            }
+          })();
+        }, [API_URL, navigate]);
 
-  const handleDragLeave = (e) => {
-    e.preventDefault()
-    setIsDragging(false)
-  }
+        if (checking) return null;
+        if (!valid) return null;
+        return children;
+      };
 
-  const handleDrop = (e) => {
-    e.preventDefault()
-    setIsDragging(false)
-    const files = Array.from(e.dataTransfer.files).filter(file => file.type === 'application/pdf')
-    addFilesToSelection(files)
-  }
-
-  const handleFileChange = (e) => {
-    const files = Array.from(e.target.files).filter(file => file.type === 'application/pdf')
-    addFilesToSelection(files)
-  }
-
-  // ===========================================
-  // NUEVAS FUNCIONES PARA MANEJO MEJORADO DE ARCHIVOS
-  // ===========================================
-  
-  const addFilesToSelection = (newFiles) => {
-    if (newFiles.length === 0) return
-    
-    // Agregar archivos únicos (evitar duplicados por nombre)
-    const existingNames = selectedFiles.map(f => f.name)
-    const uniqueFiles = newFiles.filter(file => !existingNames.includes(file.name))
-    
-    if (uniqueFiles.length === 0) {
-      Swal.fire('Información', 'Los archivos ya están seleccionados', 'info')
-      return
-    }
-    
-    const combinedFiles = [...selectedFiles, ...uniqueFiles]
-    
-    // Validar tamaño total
-    const totalSize = combinedFiles.reduce((sum, file) => sum + file.size, 0)
-    const totalMB = (totalSize / 1024 / 1024).toFixed(2)
-    
-    if (totalSize > 5 * 1024 * 1024) { // 5MB máximo
-      Swal.fire({
-        title: 'Límite excedido',
-        html: `
-          <p>El tamaño total de los archivos excede el límite de 5MB.</p>
-          <p><strong>Tamaño total:</strong> ${totalMB} MB</p>
-          <p>Por favor, selecciona menos archivos o archivos más pequeños.</p>
-        `,
-        icon: 'warning',
-        confirmButtonText: 'Entendido'
-      })
-      return
-    }
-    
-    setSelectedFiles(combinedFiles)
-    
-    // Mostrar confirmación de archivos agregados
-    if (uniqueFiles.length > 0) {
-      const message = uniqueFiles.length === 1 
-        ? `Archivo "${uniqueFiles[0].name}" agregado`
-        : `${uniqueFiles.length} archivos agregados`
-      
-      Swal.fire({
-        title: 'Archivos agregados',
-        html: `
-          <p>${message}</p>
-          <p><strong>Total de archivos:</strong> ${combinedFiles.length}</p>
-          <p><strong>Tamaño total:</strong> ${totalMB} MB / 5 MB</p>
-        `,
-        icon: 'success',
-        timer: 2000,
-        timerProgressBar: true,
-        showConfirmButton: false
-      })
-    }
-  }
-
-  const removeFileFromSelection = (indexToRemove) => {
-    const newFiles = selectedFiles.filter((_, index) => index !== indexToRemove)
-    setSelectedFiles(newFiles)
-    
-    Swal.fire({
-      title: 'Archivo eliminado',
-      text: 'El archivo ha sido removido de la selección',
-      icon: 'info',
-      timer: 1500,
-      showConfirmButton: false
-    })
-  }
-
-  const clearAllFiles = () => {
-    setSelectedFiles([])
-    Swal.fire({
-      title: 'Selección limpiada',
-      text: 'Todos los archivos han sido removidos',
-      icon: 'info',
-      timer: 1500,
-      showConfirmButton: false
-    })
-  }
-
-  const processSelectedFiles = async () => {
-    if (selectedFiles.length === 0) {
-      Swal.fire('Error', 'No hay archivos seleccionados para procesar', 'error')
-      return
-    }
-
-    const totalSize = selectedFiles.reduce((sum, file) => sum + file.size, 0)
-    const totalMB = (totalSize / 1024 / 1024).toFixed(2)
-
-    const result = await Swal.fire({
-      title: 'Procesar Archivos',
-      html: `
-        <p>Se procesarán <strong>${selectedFiles.length}</strong> archivo(s) PDF</p>
-        <p><strong>Tamaño total:</strong> ${totalMB} MB</p>
+      export default PrivateRoute;
         <p><strong>Método:</strong> Validación y conversión con Ghostscript</p>
         <hr>
         <small class="text-muted">Este proceso puede tomar algunos minutos dependiendo del tamaño de los archivos</small>

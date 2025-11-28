@@ -804,6 +804,14 @@ app.post('/api/documents/:id/send-email', verifyToken, async (req, res) => {
 
       console.log('✅ Correo enviado exitosamente:', result.messageId)
 
+      // Actualizar estado del documento a 'sent' en la base de datos
+      await prisma.document.update({
+        where: { id: documentId },
+        data: { status: 'sent' }
+      })
+
+      console.log(`📝 Documento ${documentId} marcado como 'sent'`)
+
       res.json({
         success: true,
         message: `Documento enviado exitosamente a ${email}`,
