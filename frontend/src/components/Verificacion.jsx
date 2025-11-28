@@ -351,8 +351,11 @@ const Verificacion = () => {
           console.log('Archivo subido exitosamente:', response.data)
 
           const newDoc = response.data.document
-          setDocuments(prev => [newDoc, ...prev])
-          updateMetrics([newDoc, ...documents])
+          setDocuments(prev => {
+            const updated = [newDoc, ...prev]
+            updateMetrics(updated)
+            return updated
+          })
 
           // Verificar el estado del documento
           const processingInfo = response.data.processing
@@ -461,6 +464,11 @@ const Verificacion = () => {
             setProcessing(prev => prev.filter(p => p.id !== tempId))
           }, 1000)
 
+          // Guardar resultado del primer documento cuando solo hay uno
+          if (files.length === 1) {
+            singleResultDoc = newDoc
+          }
+
         } catch (error) {
           setProcessing(prev => prev.filter(p => p.id !== tempId))
           console.error('Upload error:', error)
@@ -527,11 +535,6 @@ const Verificacion = () => {
           })
           alertShown = true
         }
-
-        // Guardar resultado del primer documento cuando solo hay uno
-        if (files.length === 1) {
-          singleResultDoc = newDoc
-        }
       }
 
       // No mostrar mensaje genérico de "Procesamiento completado"
@@ -570,9 +573,6 @@ const Verificacion = () => {
         })
       }
 
-    } catch (error) {
-      console.error('Error uploading files:', error)
-      Swal.fire('Error', 'Error inesperado al subir archivos', 'error')
     } finally {
       setUploading(false)
       // No limpiar selectedFiles aquí, se limpia en processSelectedFiles tras éxito
