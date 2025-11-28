@@ -9,6 +9,7 @@ class EmailService {
     
     this.resend = new Resend(process.env.RESEND_API_KEY)
     this.fromEmail = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev'
+    console.log('🔍 [EmailService] FROM efectivo (usado en envío):', this.fromEmail)
   }
 
   /**

@@ -1120,7 +1120,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   // Verificar Resend Email
   if (emailService.isConfigured()) {
     console.log('✅ Resend Email: Configurado')
-    console.log(`   📧 Email desde: ${process.env.RESEND_FROM_EMAIL}`)
+    console.log(`   📧 Email desde: ${emailService.fromEmail || 'onboarding@resend.dev'}`)
   } else {
     console.log('⚠️  Resend Email: No configurado')
     console.log('   ℹ️  Para habilitar envío de correos, configura:')
