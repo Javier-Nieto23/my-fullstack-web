@@ -358,16 +358,52 @@ const Verificacion = () => {
           const processingInfo = response.data.processing
           const validationInfo = response.data.validation
           
-          // Si el documento no cumple especificaciones
-          if (newDoc.status === 'non_compliant') {
-            console.log('⚠️ Documento no cumplió especificaciones:', newDoc)
+          // Normalizar valor booleano de procesamiento automático
+          const autoProcessed = !!(processingInfo?.wasProcessed || newDoc.wasProcessed || newDoc.name?.startsWith('processed_'))
+
+          // 1) Caso: Procesado automáticamente (mostrar primero para evitar confusión)
+          if (autoProcessed && newDoc.status === 'processed') {
+            console.log('ℹ️ Documento auto-convertido. wasProcessed=true')
+            Swal.fire({
+              title: 'PDF Convertido Automáticamente',
+              html: `
+                <div class="text-start">
+                  <p><i class="bi bi-gear text-warning"></i> <strong>El PDF fue convertido para cumplir las especificaciones.</strong></p>
+                  <hr>
+                  <small class="text-muted"><strong>Detalles de la conversión:</strong></small>
+                  <ul style="font-size: 0.9em;" class="mt-2">
+                    ${processingInfo?.originalSize ? `<li><strong>Tamaño original:</strong> ${(processingInfo.originalSize / 1024 / 1024).toFixed(2)} MB</li>` : ''}
+                    ${processingInfo?.finalSize ? `<li><strong>Tamaño final:</strong> ${(processingInfo.finalSize / 1024 / 1024).toFixed(2)} MB</li>` : ''}
+                    ${processingInfo?.compressionRatio ? `<li><strong>Compresión:</strong> ${processingInfo.compressionRatio}</li>` : ''}
+                    ${processingInfo?.report ? `<li><strong>Optimizaciones:</strong> ${processingInfo.report}</li>` : ''}
+                  </ul>
+                  ${validationInfo?.warnings && validationInfo.warnings.length > 0 ? `
+                    <hr>
+                    <small class="text-muted"><strong>Advertencias:</strong></small>
+                    <ul style="font-size: 0.9em;" class="mt-2">
+                      ${validationInfo.warnings.map(w => `<li>${w}</li>`).join('')}
+                    </ul>
+                  ` : ''}
+                  <hr>
+                  <p class="mb-0"><small class="text-success">✅ El archivo ahora cumple y está disponible en la lista.</small></p>
+                </div>
+              `,
+              icon: 'info',
+              confirmButtonText: 'Entendido',
+              width: '600px'
+            })
+            alertShown = true
+          }
+          // 2) Caso: No cumple (sin procesamiento automático posible)
+          else if (newDoc.status === 'non_compliant') {
+            console.log('⚠️ Documento no cumplido:', newDoc)
             Swal.fire({
               title: 'Documento No Cumplido',
               html: `
                 <div class="text-start">
-                  <p><i class="bi bi-exclamation-triangle text-danger"></i> <strong>El PDF no cumple con las especificaciones requeridas</strong></p>
+                  <p><i class="bi bi-exclamation-triangle text-danger"></i> <strong>El PDF no cumple con las especificaciones</strong></p>
                   <hr>
-                  <small class="text-muted"><strong>Razón del rechazo:</strong></small>
+                  <small class="text-muted"><strong>Razón:</strong></small>
                   <p style="font-size: 0.9em;" class="mt-2">${newDoc.errorReason || 'No se pudo procesar el archivo'}</p>
                   ${validationInfo?.errors && validationInfo.errors.length > 0 ? `
                     <hr>
@@ -384,7 +420,7 @@ const Verificacion = () => {
                     </ul>
                   ` : ''}
                   <hr>
-                  <p class="mb-0"><small class="text-info">ℹ️ El archivo fue guardado y puedes verlo haciendo clic en él desde la lista de documentos.</small></p>
+                  <p class="mb-0"><small class="text-info">ℹ️ El archivo se guarda para referencia y puede visualizarse.</small></p>
                 </div>
               `,
               icon: 'error',
@@ -393,53 +429,20 @@ const Verificacion = () => {
             })
             alertShown = true
           }
-          // Si el archivo fue procesado automáticamente, mostrar información
-          else if (processingInfo?.wasProcessed && newDoc.status === 'processed') {
-            console.log('⚠️ Archivo procesado automáticamente:', processingInfo)
-            Swal.fire({
-              title: 'Archivo Procesado',
-              html: `
-                <div class="text-start">
-                  <p><i class="bi bi-gear text-warning"></i> <strong>El PDF fue convertido automáticamente</strong></p>
-                  <hr>
-                  <small class="text-muted"><strong>Detalles de la conversión:</strong></small>
-                  <ul style="font-size: 0.9em;" class="mt-2">
-                    <li><strong>Tamaño original:</strong> ${(processingInfo.originalSize / 1024 / 1024).toFixed(2)} MB</li>
-                    <li><strong>Tamaño final:</strong> ${(processingInfo.finalSize / 1024 / 1024).toFixed(2)} MB</li>
-                    <li><strong>Compresión:</strong> ${processingInfo.compressionRatio}</li>
-                    ${processingInfo.report ? `<li><strong>Optimizaciones:</strong> ${processingInfo.report}</li>` : ''}
-                  </ul>
-                  ${validationInfo?.warnings && validationInfo.warnings.length > 0 ? `
-                    <hr>
-                    <small class="text-muted"><strong>Advertencias:</strong></small>
-                    <ul style="font-size: 0.9em;" class="mt-2">
-                      ${validationInfo.warnings.map(w => `<li>${w}</li>`).join('')}
-                    </ul>
-                  ` : ''}
-                  <hr>
-                  <p class="mb-0"><small class="text-success">✅ El archivo fue procesado exitosamente y ahora cumple con las especificaciones.</small></p>
-                </div>
-              `,
-              icon: 'info',
-              confirmButtonText: 'Entendido',
-              width: '600px'
-            })
-            alertShown = true
-          }
-          // Si hay warnings importantes aunque no se haya procesado
+          // 3) Caso: Procesado originalmente pero con advertencias
           else if (validationInfo?.warnings && validationInfo.warnings.length > 0 && newDoc.status === 'processed') {
-            console.log('⚠️ Archivo con advertencias:', validationInfo)
+            console.log('⚠️ Procesado con advertencias:', validationInfo)
             Swal.fire({
-              title: 'Archivo Procesado con Advertencias',
+              title: 'Procesado con Advertencias',
               html: `
                 <div class="text-start">
-                  <p><i class="bi bi-exclamation-triangle text-warning"></i> <strong>El archivo se procesó pero tiene advertencias:</strong></p>
+                  <p><i class="bi bi-exclamation-triangle text-warning"></i> <strong>El archivo cumple, pero revisa estas advertencias:</strong></p>
                   <hr>
                   <ul style="font-size: 0.9em;">
                     ${validationInfo.warnings.map(w => `<li>${w}</li>`).join('')}
                   </ul>
                   <hr>
-                  <p class="mb-0"><small class="text-info">ℹ️ El archivo fue aceptado pero considera revisar estas advertencias.</small></p>
+                  <p class="mb-0"><small class="text-info">ℹ️ Puedes continuar, el documento es válido.</small></p>
                 </div>
               `,
               icon: 'warning',
@@ -447,6 +450,11 @@ const Verificacion = () => {
               width: '600px'
             })
             alertShown = true
+          }
+          // 4) Caso: Procesado limpio sin advertencias ni conversión (silencioso)
+          else if (newDoc.status === 'processed') {
+            console.log('✅ Procesado sin conversion ni advertencias:', newDoc.name)
+            // No mostramos modal para evitar ruido.
           }
 
           setTimeout(() => {
