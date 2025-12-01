@@ -68,23 +68,25 @@ class EmailService {
                   <p style="margin: 0; font-size: 14px;">
                     <strong>📎 Archivo adjunto:</strong> ${documentName}<br>
                     <strong>📊 Tamaño:</strong> ${(pdfBuffer.length / 1024).toFixed(2)} KB<br>
-                    <strong>📅 Fecha:</strong> ${new Date().toLocaleDateString('es-MX', { 
+                    <strong>📅 Fecha:</strong> ${new Date().toLocaleString('es-ES', { 
                       year: 'numeric', 
                       month: 'long', 
                       day: 'numeric',
                       hour: '2-digit',
-                      minute: '2-digit'
+                      minute: '2-digit',
+                      timeZone: 'Europe/Madrid',
+                      timeZoneName: 'short'
                     })}
                   </p>
                 </div>
 
                 <p style="font-size: 14px; color: #666; margin-top: 30px;">
-                  Este correo fue generado automáticamente por el Portal de Carga de Información de SEER Tráfico S.C.
+                  Este correo fue generado automáticamente por el Portal de Carga de Información de CAAST.
                 </p>
               </div>
 
               <div style="text-align: center; margin-top: 20px; color: #999; font-size: 12px;">
-                <p>© ${new Date().getFullYear()} SEER Tráfico S.C. — Todos los derechos reservados</p>
+                <p>© ${new Date().getFullYear()} ©CAAST — Todos los derechos reservados</p>
               </div>
             </body>
           </html>
