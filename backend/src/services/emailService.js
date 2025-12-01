@@ -68,15 +68,14 @@ class EmailService {
                   <p style="margin: 0; font-size: 14px;">
                     <strong>📎 Archivo adjunto:</strong> ${documentName}<br>
                     <strong>📊 Tamaño:</strong> ${(pdfBuffer.length / 1024).toFixed(2)} KB<br>
-                    <strong>📅 Fecha:</strong> ${new Date().toLocaleString('es-ES', { 
+                    <strong>📅 Fecha:</strong> ${new Date().toLocaleString(undefined, { 
                       year: 'numeric', 
                       month: 'long', 
                       day: 'numeric',
                       hour: '2-digit',
                       minute: '2-digit',
-                      timeZone: 'Europe/Madrid',
-                      timeZoneName: 'short'
-                    })}
+                      second: '2-digit'
+                    })} (hora local del servidor)
                   </p>
                 </div>
 
