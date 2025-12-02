@@ -126,11 +126,14 @@ class EmailService {
    * @param {string} params.message - Mensaje del correo
    * @returns {Promise<Object>}
    */
+
   async sendNotification({ to, subject, message }) {
     try {
       if (!this.isConfigured()) {
         throw new Error('Servicio de email no configurado')
       }
+
+
 
       const { data, error } = await this.resend.emails.send({
         from: this.fromEmail,
