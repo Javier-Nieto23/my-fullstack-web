@@ -13,6 +13,10 @@ import { fileURLToPath } from 'url'
 import { dirname } from 'path'
 import { exec } from 'child_process'
 import { promisify } from 'util'
+import helmet from 'helmet'
+import rateLimit from 'express-rate-limit'
+import { body, validationResult } from 'express-validator'
+import validator from 'validator'
 import r2Service from './services/cloudflareR2.js'
 import { pdfValidator } from './services/pdfValidator.js'
 import PDFProcessor from './services/pdfProcessor.js'
@@ -38,6 +42,29 @@ if (!fs.existsSync(uploadsDir)) {
 app.use('/uploads', express.static(uploadsDir))
 
 app.use(express.json())
+
+// Seguridad: Helmet para headers seguros
+app.use(helmet({
+  contentSecurityPolicy: false, // Desactivar para permitir contenido embebido
+  crossOriginEmbedderPolicy: false
+}))
+
+// Rate limiting para prevenir ataques de fuerza bruta
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos
+  max: 10, // límite de 10 intentos por IP
+  message: 'Demasiados intentos de inicio de sesión, intenta más tarde',
+  standardHeaders: true,
+  legacyHeaders: false,
+})
+
+const apiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minuto
+  max: 100, // límite de 100 requests por minuto
+  message: 'Demasiadas peticiones, intenta más tarde',
+  standardHeaders: true,
+  legacyHeaders: false,
+})
 
 // Configurar CORS para soportar Railway y desarrollo local
 const corsOptions = {
@@ -211,7 +238,7 @@ const verifyToken = (req, res, next) => {
 // ===========================================
 
 // POST /documents/upload - Subir y procesar PDF con Cloudflare R2
-app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res) => {
+app.post('/documents/upload', verifyToken, apiLimiter, upload.single('pdf'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No se proporcionó archivo PDF' })
@@ -226,6 +253,19 @@ app.post('/documents/upload', verifyToken, upload.single('pdf'), async (req, res
 
     const { originalname, buffer, size, mimetype } = req.file
     const userId = req.user.id
+
+    // Sanitizar nombre de archivo para prevenir path traversal
+    const sanitizedFilename = path.basename(originalname).replace(/[^a-zA-Z0-9._-]/g, '_')
+    
+    // Validar tamaño de archivo (adicional al límite de multer)
+    if (size > 10 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Archivo demasiado grande (máximo 10MB)' })
+    }
+
+    // Validar tipo MIME estricto
+    if (mimetype !== 'application/pdf') {
+      return res.status(400).json({ error: 'Solo se permiten archivos PDF' })
+    }
 
     // 🔍 OBTENER INFORMACIÓN DEL USUARIO
     const user = await prisma.user.findUnique({
@@ -837,29 +877,36 @@ app.post('/api/documents/:id/send-email', verifyToken, async (req, res) => {
 // ===========================================
 
 // POST /auth/register - Registrar nuevo usuario
-app.post('/auth/register', async (req, res) => {
+app.post('/auth/register',
+  authLimiter,
+  [
+    body('email').isEmail().normalizeEmail().withMessage('Email inválido'),
+    body('rfc').trim().isLength({ min: 12, max: 13 }).matches(/^[A-Z&Ñ]{3,4}[0-9]{6}[A-Z0-9]{3}$/).withMessage('RFC inválido'),
+    body('nombre').trim().isLength({ min: 3, max: 100 }).escape().withMessage('Nombre debe tener entre 3 y 100 caracteres'),
+    body('password').isLength({ min: 8 }).matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage('Contraseña debe tener al menos 8 caracteres, una mayúscula, una minúscula y un número'),
+    body('passwordConfirm').custom((value, { req }) => value === req.body.password).withMessage('Las contraseñas no coinciden')
+  ],
+  async (req, res) => {
   try {
-    const { email, rfc, nombre, password, passwordConfirm } = req.body
-
-    // Validaciones
-    if (!email || !rfc || !nombre || !password) {
-      return res.status(400).json({ error: 'Todos los campos son requeridos' })
+    // Verificar errores de validación
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: errors.array()[0].msg })
     }
 
-    if (password !== passwordConfirm) {
-      return res.status(400).json({ error: 'Las contraseñas no coinciden' })
-    }
+    const { email, rfc, nombre, password } = req.body
 
-    if (rfc.length < 12) {
-      return res.status(400).json({ error: 'RFC debe tener al menos 12 caracteres' })
-    }
+    // Sanitización adicional
+    const sanitizedEmail = validator.normalizeEmail(email)
+    const sanitizedRfc = validator.escape(rfc.toUpperCase())
+    const sanitizedNombre = validator.escape(nombre.trim())
 
     // Verificar si el usuario ya existe
     const existingUser = await prisma.user.findFirst({
       where: {
         OR: [
-          { email: email.toLowerCase() },
-          { rfc: rfc.toUpperCase() }
+          { email: sanitizedEmail },
+          { rfc: sanitizedRfc }
         ]
       }
     })
@@ -874,9 +921,9 @@ app.post('/auth/register', async (req, res) => {
     // Crear usuario
     const user = await prisma.user.create({
       data: {
-        email: email.toLowerCase(),
-        rfc: rfc.toUpperCase(),
-        nombre,
+        email: sanitizedEmail,
+        rfc: sanitizedRfc,
+        nombre: sanitizedNombre,
         password: hashedPassword
       }
     })
@@ -905,18 +952,26 @@ app.post('/auth/register', async (req, res) => {
 })
 
 // POST /auth/login - Iniciar sesión
-app.post('/auth/login', async (req, res) => {
+app.post('/auth/login',
+  authLimiter,
+  [
+    body('email').isEmail().normalizeEmail().withMessage('Email inválido'),
+    body('password').notEmpty().withMessage('Contraseña requerida')
+  ],
+  async (req, res) => {
   try {
-    const { email, password } = req.body
-
-    // Validaciones
-    if (!email || !password) {
-      return res.status(400).json({ error: 'Email y contraseña son requeridos' })
+    // Verificar errores de validación
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ error: errors.array()[0].msg })
     }
+
+    const { email, password } = req.body
+    const sanitizedEmail = validator.normalizeEmail(email)
 
     // Buscar usuario
     const user = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() }
+      where: { email: sanitizedEmail }
     })
 
     if (!user) {
