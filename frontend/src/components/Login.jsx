@@ -44,10 +44,18 @@ const Login = () => {
       const data = await response.json();
 
       if (!response.ok) {
-        setAlertMsg({
-          type: "danger",
-          text: data.error || "Error al iniciar sesión",
-        });
+        // Detectar error de rate limiting (429)
+        if (response.status === 429) {
+          setAlertMsg({
+            type: "danger",
+            text: data.error || "Demasiados intentos. Espera unos minutos antes de intentar de nuevo.",
+          });
+        } else {
+          setAlertMsg({
+            type: "danger",
+            text: data.error || "Error al iniciar sesión",
+          });
+        }
         setLoading(false);
         return;
       }

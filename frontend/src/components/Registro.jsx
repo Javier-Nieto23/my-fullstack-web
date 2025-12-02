@@ -169,10 +169,18 @@ const Registro = () => {
       const data = await response.json();
 
       if (!response.ok) {
-        setAlertMsg({
-          type: "danger",
-          text: data.error || "Error al registrar usuario",
-        });
+        // Detectar error de rate limiting (429)
+        if (response.status === 429) {
+          setAlertMsg({
+            type: "danger",
+            text: data.error || "Demasiados intentos. Espera unos minutos antes de intentar de nuevo.",
+          });
+        } else {
+          setAlertMsg({
+            type: "danger",
+            text: data.error || "Error al registrar usuario",
+          });
+        }
         setLoading(false);
         return;
       }

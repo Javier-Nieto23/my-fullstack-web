@@ -53,17 +53,29 @@ app.use(helmet({
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
   max: 10, // límite de 10 intentos por IP
-  message: 'Demasiados intentos de inicio de sesión, intenta más tarde',
+  message: { error: 'Demasiados intentos de inicio de sesión, intenta más tarde' },
   standardHeaders: true,
   legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({
+      error: 'Demasiados intentos de inicio de sesión, intenta más tarde',
+      retryAfter: Math.ceil(req.rateLimit.resetTime / 1000)
+    })
+  }
 })
 
 const apiLimiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minuto
   max: 100, // límite de 100 requests por minuto
-  message: 'Demasiadas peticiones, intenta más tarde',
+  message: { error: 'Demasiadas peticiones, intenta más tarde' },
   standardHeaders: true,
   legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({
+      error: 'Demasiadas peticiones, intenta más tarde',
+      retryAfter: Math.ceil(req.rateLimit.resetTime / 1000)
+    })
+  }
 })
 
 // Configurar CORS para soportar Railway y desarrollo local
